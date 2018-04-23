@@ -25,6 +25,21 @@ class StartCommand extends BaseCommand
 	protected $projectDirectory;
 
 	/**
+	 * @var
+	 */
+	protected $removeDB;
+
+	/**
+	 * @var
+	 */
+	protected $migrateDB;
+
+	/**
+	 * @var
+	 */
+	protected $seedDB;
+
+	/**
 	 * Configure the command options.
 	 *
 	 * @return void
@@ -37,7 +52,8 @@ class StartCommand extends BaseCommand
 			->addArgument('name', InputArgument::REQUIRED)
 			->addArgument('services',  InputArgument::IS_ARRAY | InputArgument::OPTIONAL, 'The services you like to boot')
 			->addOption('default', 'd', InputOption::VALUE_NONE, 'Use default values for config')
-			->addOption('force', 'f', InputOption::VALUE_NONE, 'Overrides the files');
+			->addOption('force', 'f', InputOption::VALUE_NONE, 'Overrides the files')
+			->addOption('pull', 'p', InputOption::VALUE_NONE, 'Forces pull of latest commit in current branch!');
 	}
 
 	/**
@@ -132,9 +148,14 @@ class StartCommand extends BaseCommand
 				$this->write("\n<comment>==========================================================================</comment>\n\n\n");
 				continue;
 			}
+
 			$this->write("Booting up service: <comment>$serviceName</comment> ! \n");
 			$this->loadServiceEnvFile($serviceName);
 			$config = $this->loadConfigFileForProject($serviceName);
+
+			if ($config && (!$config['git-pull'] || $config['git-pull'] === false)) {
+				$this->pullLatest($serviceName);
+			}
 
 			if ($config && $config['before']) {
 				$this->runBeforeConfigCommands($config, $serviceName);
@@ -146,8 +167,6 @@ class StartCommand extends BaseCommand
 			if ($this->doesServiceHaveDockerDevFile($serviceName)) {
 				$args .= " -f docker-compose.dev.yml";
 			}
-
-
 
 			if ($config && $config['after']) {
 				$this->runAfterConfigCommands($config, $serviceName);
@@ -259,13 +278,13 @@ class StartCommand extends BaseCommand
 			$dbExists = $this->runNonTtyCommand("docker exec dev-env-mysql mysql -N -s -r -e \"SHOW DATABASES LIKE '{$databaseName}';\"");
 			if ($dbExists) {
 				$this->info("DDBB {$databaseName} already exists!");
-				$remove = !$this->input->getOption('force') ? $this->ask(new ConfirmationQuestion(
+				$this->removeDB = !$this->input->getOption('force') ? $this->ask(new ConfirmationQuestion(
 					"Database already exists, do you want to recreate it again? [Y|N] (No): ",
 					false,
 					'/^(y|j)/i'
 				)) : true;
 
-				if ($remove) {
+				if ($this->removeDB) {
 					$this->info("Removing DDBB {$databaseName}!");
 					$this->runCommand("docker exec -it dev-env-mysql mysql -e \"DROP DATABASE {$databaseName};\"");
 					$dbExists = $this->runNonTtyCommand("docker exec dev-env-mysql mysql -N -s -r -e \"SHOW DATABASES LIKE '{$databaseName}';\"");
@@ -273,6 +292,8 @@ class StartCommand extends BaseCommand
 			}
 
 			if (!$dbExists) {
+				$this->migrateDB = true;
+				$this->seedDB = true;
 				$this->info("Creating DDBB {$databaseName}!\n");
 				$databaseUser = getenv('DB_USERNAME');
 				$databasePassword = getenv('DB_PASSWORD');
@@ -317,7 +338,7 @@ class StartCommand extends BaseCommand
 	{
 		$rocketFile = $this->getRocketFileForService($serviceName);
 		$composerFile = $this->getComposerFileForService($serviceName);
-		if ($this->fileSystem->exists($rocketFile) && $this->fileSystem->exists($composerFile)) {
+		if ($this->migrateDB && $this->fileSystem->exists($rocketFile) && $this->fileSystem->exists($composerFile)) {
 			$this->runCommand("./rocket art migrate", $this->getDirectoryForService($serviceName));
 		}
 	}
@@ -329,7 +350,7 @@ class StartCommand extends BaseCommand
 	{
 		$rocketFile = $this->getRocketFileForService($serviceName);
 		$composerFile = $this->getComposerFileForService($serviceName);
-		if ($this->fileSystem->exists($rocketFile) && $this->fileSystem->exists($composerFile)) {
+		if ($this->seedDB && $this->fileSystem->exists($rocketFile) && $this->fileSystem->exists($composerFile)) {
 			$this->runCommand("./rocket art db:seed", $this->getDirectoryForService($serviceName));
 		}
 	}
@@ -375,5 +396,35 @@ class StartCommand extends BaseCommand
 	protected function runSomeCommand($command, $serviceName)
 	{
 		$this->runCommand($command, $this->getDirectoryForService($serviceName));
+	}
+
+	/**
+	 * @param $serviceName
+	 */
+	protected function pullLatest($serviceName)
+	{
+		$git = $this->getGitForService($serviceName);
+
+		if ($this->fileSystem->exists($git) ) {
+			$this->write("\nPulling latest commit for <comment>$serviceName</comment>\n");
+
+			$hasChanges = $this->runNonTtyCommand("git status", $this->getDirectoryForService($serviceName));
+			$force = $this->input->getOption('force') || $this->input->getOption('pull');
+			if ($hasChanges) {
+				$cleanUp = !$force ? $this->ask(new ConfirmationQuestion(
+					"Git repository fot {$serviceName} not clean, do you want to clean it? [Y|N] (No): ",
+					false,
+					'/^(y|j)/i'
+				)) : true;
+
+				if ($cleanUp) {
+					$this->runCommand("git checkout -f", $this->getDirectoryForService($serviceName));
+				}
+			}
+
+
+
+			$this->runCommand("git pull", $this->getDirectoryForService($serviceName));
+		}
 	}
 }

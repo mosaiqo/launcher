@@ -216,6 +216,14 @@ class BaseCommand extends Command
 	 * @param $serviceName
 	 * @return string
 	 */
+	protected function getGitForService ($serviceName) {
+		return $this->getServiceFolderForService($serviceName) . DIRECTORY_SEPARATOR . ".git";
+	}
+
+	/**
+	 * @param $serviceName
+	 * @return string
+	 */
 	protected function getPackageFileForService ($serviceName) {
 		return $this->getServiceFolderForService($serviceName) . DIRECTORY_SEPARATOR . "package.json";
 	}
