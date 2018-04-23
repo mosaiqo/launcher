@@ -404,25 +404,27 @@ class StartCommand extends BaseCommand
 	protected function pullLatest($serviceName)
 	{
 		$git = $this->getGitForService($serviceName);
-
-		if ($this->fileSystem->exists($git) ) {
+		if ($this->fileSystem->exists($git) &&  $this->input->getOption('pull')) {
+			$hasChanges = false;
 			$this->write("\nPulling latest commit for <comment>$serviceName</comment>\n");
 
-			$hasChanges = $this->runNonTtyCommand("git status", $this->getDirectoryForService($serviceName));
-			$force = $this->input->getOption('force') || $this->input->getOption('pull');
+			$gitStatus = $this->runNonTtyCommand("git status", $this->getDirectoryForService($serviceName));
+
+			if(strstr($gitStatus, "Nothing to commit") !== -1) {
+				$hasChanges = true;
+			}
+			$force = $this->input->getOption('force');
+
 			if ($hasChanges) {
 				$cleanUp = !$force ? $this->ask(new ConfirmationQuestion(
 					"Git repository fot {$serviceName} not clean, do you want to clean it? [Y|N] (No): ",
 					false,
 					'/^(y|j)/i'
 				)) : true;
-
 				if ($cleanUp) {
 					$this->runCommand("git checkout -f", $this->getDirectoryForService($serviceName));
 				}
 			}
-
-
 
 			$this->runCommand("git pull", $this->getDirectoryForService($serviceName));
 		}
