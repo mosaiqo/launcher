@@ -16,4 +16,5 @@ $app->add(new Mosaiqo\Launcher\Console\ConfigCommand);
 $app->add(new Mosaiqo\Launcher\Console\NewCommand);
 $app->add(new Mosaiqo\Launcher\Console\StartCommand);
 $app->add(new Mosaiqo\Launcher\Console\StopCommand);
+$app->add(new Mosaiqo\Launcher\Console\OpenCommand);
 $app->run();
