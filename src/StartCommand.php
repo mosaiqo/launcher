@@ -92,7 +92,7 @@ class StartCommand extends BaseCommand
 		if ($networkExists) {
 			$this->info("Network $network exists already");
 		} else {
-			$this->info("Network $network doesn't exist yet! \Let's create it!");
+			$this->info("Network $network doesn't exist yet! \nLet's create it!");
 			$this->runCommand("docker network create $network");
 		}
 
@@ -111,6 +111,11 @@ class StartCommand extends BaseCommand
 				$this->write("\nSkipping Service <comment>$serviceName</comment>, because there is no docker-compose.yml file \n");
 				continue;
 			}
+			$config = $this->loadConfigFileForProject($serviceName);
+
+			if ($config && $config['before']) {
+				$this->runBeforeConfigCommands($config, $serviceName);
+			}
 
 
 			$this->write("Booting up service: <comment>$serviceName</comment> ! \n");
@@ -122,33 +127,14 @@ class StartCommand extends BaseCommand
 				$args .= " -f docker-compose.dev.yml";
 			}
 
-			$config = $this->loadConfigFileForProject($serviceName);
 
-			if ($config['db-create']) {
-				$this->createDataBase($serviceName);
+
+			if ($config && $config['after']) {
+				$this->runAfterConfigCommands($config, $serviceName);
 			}
 
-
-
-			if ($config['npm']) {
-				$this->installNpmDependencies($config, $serviceName);
-			}
-
-			if ($config['composer']) {
-				$this->installComposerDependencies($config, $serviceName);
-			}
-
-			if ($config['migration']) {
-				$this->migrateDatabase($config, $serviceName);
-			}
-
-			if ($config['seed']) {
-				$this->seedDatabase($config, $serviceName);
-			}
-
-
-
-			$this->runCommand("docker-compose ${args} up -d --build --remove-orphans || exit 1", $this->getDirectoryForService($serviceName));
+			$this->runCommand("docker-compose ${args} up -d --build --remove-orphans || exit 1",
+				$this->getDirectoryForService($serviceName));
 		}
 	}
 
@@ -156,14 +142,14 @@ class StartCommand extends BaseCommand
 	/**
 	 * @param $serviceName
 	 */
-	protected function loadServiceEnvFile ($serviceName)
+	protected function loadServiceEnvFile($serviceName)
 	{
 		$file = $this->getFileForService('.env', $serviceName);
 		$dotenv = new Dotenv();
-		if($this->fileSystem->exists($file)) {
+		if ($this->fileSystem->exists($file)) {
 			$dotenv->load($file);
 		}
-		$WWWUSER = (int) posix_getuid();
+		$WWWUSER = (int)posix_getuid();
 		$dotenv->populate([
 			'UID' => $WWWUSER,
 			'WWWUSER' => $WWWUSER,
@@ -177,7 +163,8 @@ class StartCommand extends BaseCommand
 	/**
 	 * @return string
 	 */
-	protected function getServicesDirectory () {
+	protected function getServicesDirectory()
+	{
 		return $this->getProjectDirectory() . DIRECTORY_SEPARATOR . 'services/';
 	}
 
@@ -186,7 +173,8 @@ class StartCommand extends BaseCommand
 	 * @param $serviceName
 	 * @return string
 	 */
-	protected function getDirectoryForService ($serviceName) {
+	protected function getDirectoryForService($serviceName)
+	{
 		return $this->getServicesDirectory() . $serviceName;
 	}
 
@@ -195,8 +183,9 @@ class StartCommand extends BaseCommand
 	 * @param $serviceName
 	 * @return string
 	 */
-	protected function getFileForService ($file, $serviceName) {
-		return $this->getServicesDirectory() . $serviceName .  DIRECTORY_SEPARATOR . $file;
+	protected function getFileForService($file, $serviceName)
+	{
+		return $this->getServicesDirectory() . $serviceName . DIRECTORY_SEPARATOR . $file;
 	}
 
 	/**
@@ -218,23 +207,26 @@ class StartCommand extends BaseCommand
 	}
 
 
-
+	/**
+	 * @param $serviceName
+	 * @return array|mixed
+	 */
 	protected function loadConfigFileForProject($serviceName)
 	{
 		$fileName = 'launcher.json';
 		$configFile = $this->getFileForService($fileName, $serviceName);
 		$config = [];
-		if ($this->fileSystem->exists($configFile))
-		{
+		if ($this->fileSystem->exists($configFile)) {
 			$this->comment("Launcher config file found for $serviceName \n");
 			$this->finder->files()->in($this->getDirectoryForService($serviceName))->name($fileName);
 			foreach ($this->finder as $file) {
 				$content = $file->getContents();
-				$config = json_decode($content,true);
+				$config = json_decode($content, true);
 			}
 		}
 		return $config;
 	}
+
 	/**
 	 *
 	 */
@@ -244,7 +236,7 @@ class StartCommand extends BaseCommand
 		if ($isMySQLRunning) {
 			$this->info("MySQL is Running");
 			$databaseName = getenv('DB_DATABASE');
-			$dbExists = $this->runNonTtyCommand("docker exec -it dev-env-mysql mysql --login-path=local  -e \"SHOW DATABASES LIKE '{$databaseName}';\"");
+			$dbExists = $this->runNonTtyCommand("docker exec -it dev-env-mysql mysql -e \"SHOW DATABASES LIKE '{$databaseName}';\"");
 
 			if ($dbExists) {
 				$this->info("DDBB {$databaseName} already exists!");
@@ -256,8 +248,8 @@ class StartCommand extends BaseCommand
 
 				if ($remove) {
 					$this->info("Removing DDBB {$databaseName}!");
-					$this->runCommand("docker exec -it dev-env-mysql mysql --login-path=local -e \"DROP DATABASE {$databaseName};\"");
-					$dbExists = $this->runNonTtyCommand("docker exec -it dev-env-mysql mysql --login-path=local  -e \"SHOW DATABASES LIKE '{$databaseName}';\"");
+					$this->runCommand("docker exec -it dev-env-mysql mysql -e \"DROP DATABASE {$databaseName};\"");
+					$dbExists = $this->runNonTtyCommand("docker exec -it dev-env-mysql mysql  -e \"SHOW DATABASES LIKE '{$databaseName}';\"");
 				}
 			}
 
@@ -265,16 +257,19 @@ class StartCommand extends BaseCommand
 				$this->info("Creating DDBB {$databaseName}!\n");
 				$databaseUser = getenv('DB_USERNAME');
 				$databasePassword = getenv('DB_PASSWORD');
-				$this->runCommand("docker exec -it dev-env-mysql mysql --login-path=local -e \"CREATE DATABASE IF NOT EXISTS {$databaseName};\"");
-				$this->runCommand("docker exec -it dev-env-mysql mysql --login-path=local -e \"CREATE USER IF NOT EXISTS {$databaseUser}@'%' IDENTIFIED BY '{$databasePassword}';\"");
-				$this->runCommand("docker exec -it dev-env-mysql mysql --login-path=local -e \"GRANT ALL PRIVILEGES ON {$databaseName}.* TO {$databaseUser}@'%';\"");
-				$this->runCommand("		docker exec -it dev-env-mysql mysql --login-path=local -e \"FLUSH PRIVILEGES;\"");
+				$this->runCommand("docker exec -it dev-env-mysql mysql -e \"CREATE DATABASE IF NOT EXISTS {$databaseName};\"");
+				$this->runCommand("docker exec -it dev-env-mysql mysql -e \"CREATE USER IF NOT EXISTS {$databaseUser}@'%' IDENTIFIED BY '{$databasePassword}';\"");
+				$this->runCommand("docker exec -it dev-env-mysql mysql -e \"GRANT ALL PRIVILEGES ON {$databaseName}.* TO {$databaseUser}@'%';\"");
+				$this->runCommand("		docker exec -it dev-env-mysql mysql -e \"FLUSH PRIVILEGES;\"");
 			}
 		}
 	}
 
 
-	protected function installNpmDependencies($config, $serviceName)
+	/**
+	 * @param $serviceName
+	 */
+	protected function installNpmDependencies($serviceName)
 	{
 		$rocketFile = $this->getRocketFileForService($serviceName);
 		$npmFile = $this->getPackageFileForService($serviceName);
@@ -284,7 +279,10 @@ class StartCommand extends BaseCommand
 
 	}
 
-	protected function installComposerDependencies($config, $serviceName)
+	/**
+	 * @param $serviceName
+	 */
+	protected function installComposerDependencies($serviceName)
 	{
 		$rocketFile = $this->getRocketFileForService($serviceName);
 		$composerFile = $this->getComposerFileForService($serviceName);
@@ -293,11 +291,67 @@ class StartCommand extends BaseCommand
 		}
 	}
 
-	protected function migrateDatabase($config, $serviceName)
+	/**
+	 * @param $serviceName
+	 */
+	protected function migrateDatabase($serviceName)
 	{
+		$rocketFile = $this->getRocketFileForService($serviceName);
+		$composerFile = $this->getComposerFileForService($serviceName);
+		if ($this->fileSystem->exists($rocketFile) && $this->fileSystem->exists($composerFile)) {
+			$this->runCommand("art migrate", $this->getDirectoryForService($serviceName));
+		}
 	}
 
-	protected function seedDatabase($config, $serviceName)
+	/**
+	 * @param $serviceName
+	 */
+	protected function seedDatabase($serviceName)
 	{
+		$rocketFile = $this->getRocketFileForService($serviceName);
+		$composerFile = $this->getComposerFileForService($serviceName);
+		if ($this->fileSystem->exists($rocketFile) && $this->fileSystem->exists($composerFile)) {
+			$this->runCommand("art db:seed", $this->getDirectoryForService($serviceName));
+		}
+	}
+
+
+	/**
+	 * @param $config
+	 * @param $serviceName
+	 */
+	protected function runBeforeConfigCommands($config, $serviceName)
+	{
+		return $this->runConfigCommands($config['before'], $serviceName);
+	}
+
+	/**
+	 * @param $config
+	 * @param $serviceName
+	 */
+	protected function runAfterConfigCommands($config, $serviceName) {
+		return $this->runConfigCommands($config['after'], $serviceName);
+	}
+
+
+	protected function runConfigCommands($config, $serviceName)
+	{
+		foreach ($config as $command) {
+			switch ($command) {
+				case 'db-create': $this->createDataBase($serviceName);
+					break;
+				case 'npm': $this->createDataBase($serviceName);
+					break;
+				case 'composer': $this->installComposerDependencies($serviceName);
+					break;
+				case 'migration': $this->migrateDatabase($serviceName);
+					break;
+				case 'seed': $this->seedDatabase($serviceName);
+					break;
+			}
+
+		}
+
+
 	}
 }

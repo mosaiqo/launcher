@@ -3,6 +3,7 @@
 namespace Mosaiqo\Launcher\Console;
 
 use Mosaiqo\Launcher\Console\BaseCommand;
+use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -21,12 +22,16 @@ class NewCommand extends BaseCommand
 	 */
 	private $defaults = [
 		'LAUNCHER_PROJECT_NAME' => [
-			'text' => 'What is your project\'s name: ',
-			'default' => "argument:name"
+			'text' => 'What is your project\'s name (<projectname>): ',
+			'default' => "<projectname>"
+		],
+		'LAUNCHER_REPOSITORY' => [
+			'text' => 'The repository url too clone it?: ',
+			'default' => null
 		],
 		'LAUNCHER_TLD' => [
-			'text' => 'Which TLD do you want to use?: ',
-			'default' => "test"
+			'text' => 'Which TLD do you want to use? (local): ',
+			'default' => "local"
 		],
 		'LAUNCHER_REGISTRY_URL' => [
 			'text' => 'Which docker registry do you want to use?: ',
@@ -42,12 +47,12 @@ class NewCommand extends BaseCommand
 		],
 		'LAUNCHER_NETWORK_NAME' => [
 			'text' => 'Which name do you want for your network? (<projectname>-network): ',
-			'default' => null
+			'default' => "<projectname>-network"
 		],
 		'LAUNCHER_EDITOR' => [
-			'text' => 'Which is your prefered editor?: ',
+			'text' => 'Which is your preferred editor? (pstorm) : ',
 			'default' => "pstorm"
-		],
+		]
 	];
 
 	/**
@@ -74,6 +79,9 @@ class NewCommand extends BaseCommand
 			->setName('new')
 			->setDescription('Creates a new Project')
 			->addArgument('name', InputArgument::OPTIONAL)
+			->addOption('repository', 'r', InputOption::VALUE_OPTIONAL, 'Repository to start the project')
+			->addOption('start', 's', InputOption::VALUE_NONE, 'Start after create')
+			->addOption('config', 'c', InputOption::VALUE_NONE, 'Only apply config (This is meant for old projects)')
 			->addOption('default', 'd', InputOption::VALUE_NONE, 'Use default values for config')
 			->addOption('force', 'f', InputOption::VALUE_NONE, 'Overrides the files');
 	}
@@ -89,7 +97,6 @@ class NewCommand extends BaseCommand
 		$this->loadEnv();
 
 		$this->createNewProject();
-
 	}
 
 	/**
@@ -98,15 +105,18 @@ class NewCommand extends BaseCommand
 	protected function createNewProject()
 	{
 		$this->projectDirectory = $this->getProjectDirectory();
-		$createIt = $this->ask(new ConfirmationQuestion(
+		$deleteIt = false;
+		$force = $this->input->getOption('force');
+		$onlyConfig = $this->input->getOption('config');
+		$createIt = $force?:$this->ask(new ConfirmationQuestion(
 			"Are you sure you want to create a project in [$this->projectDirectory]? [Y|N] (yes): ",
 			true,
 			'/^(y|j)/i'
 		));
 
-		if ($this->projectDirectoryExists()) {
-			$deleteIt = $this->ask(new ConfirmationQuestion(
-				"This directory already exists [$this->projectDirectory],\n it will be deleted and this can not be undone are you sure? [Y|N] (no): ",
+		if ($this->projectDirectoryExists() && !$onlyConfig) {
+			$deleteIt = $force?:$this->ask(new ConfirmationQuestion(
+				"This directory already exists [$this->projectDirectory],\nit will be deleted and this can not be undone are you sure? [Y|N] (no): ",
 				false,
 				'/^(y|j)/i'
 			));
@@ -121,10 +131,21 @@ class NewCommand extends BaseCommand
 		}
 
 		$this->showConfigToApply();
-		$this->askIfConfigIsCorrect();
-		$this->removeExistentDirectory();
-		$this->copyFilesToProject();
+		if (!$this->askIfConfigIsCorrect()) return 0;
+
+		// We only create a new project if the user don't say it
+		if ($deleteIt) {
+			$this->removeExistentDirectory();
+			$this->createDirectory();
+			$this->initProject();
+			$this->copyFilesToProject();
+		}
+
 		$this->applyConfig();
+
+		if ($this->input->getOption('start') ) {
+			$this->runStartCommand();
+		}
 	}
 
 	/**
@@ -150,16 +171,21 @@ class NewCommand extends BaseCommand
 	 */
 	protected function getDefaultConfig()
 	{
-		$name = $this->input->getArgument('name');
-	}
-
-	/**
-	 *
-	 */
-	protected function askUserForConfig()
-	{
 		foreach ($this->defaults as $key => $value) {
-			$inputVal = $this->ask(new Question($value['text'], $value['default']));
+			$inputVal = $value['default'];
+			if ($key === "LAUNCHER_PROJECT_NAME") {
+				$inputVal = $this->input->getArgument('name');
+				$name = strpos($inputVal, '/') !== false ? end(explode('/', $inputVal)) : $inputVal;
+				$inputVal = str_replace('<projectname>', $name, $inputVal);
+			}
+
+			if ($this->input->getOption('repository') && $key === "LAUNCHER_REPOSITORY") {
+				$inputVal = $this->input->getOption('repository');
+			}
+
+			if ($key === "LAUNCHER_NETWORK_NAME") {
+				$inputVal = str_replace('<projectname>', $this->configs['env']['LAUNCHER_PROJECT_NAME'], $inputVal);
+			}
 			if (strstr($inputVal, " ")) { $inputVal = "'$inputVal'";}
 			$this->configs['env'][$key] = $inputVal;
 		}
@@ -168,11 +194,50 @@ class NewCommand extends BaseCommand
 	/**
 	 *
 	 */
+	protected function askUserForConfig()
+	{
+		foreach ($this->defaults as $key => $value) {
+			$ask = true;
+			if ($key === "LAUNCHER_PROJECT_NAME") {
+				$name = $this->input->getArgument('name');
+				$name = strpos($name, '/') !== false ? end(explode('/', $name)) : $name;
+				$value['text'] = str_replace('<projectname>', $name, $value['text']);
+				$value['default'] = str_replace('<projectname>', $name, $value['default']);
+			}
+
+			// If the user allready provided a repo we dont ask him
+			if ($this->input->getOption('repository') && $key === "LAUNCHER_REPOSITORY") {
+				$inputVal = $this->input->getOption('repository');
+				$ask = false;
+			}
+
+			if ($key === "LAUNCHER_NETWORK_NAME") {
+				$value['text'] = str_replace('<projectname>', $this->configs['env']['LAUNCHER_PROJECT_NAME'], $value['text']);
+				$value['default'] = str_replace('<projectname>', $this->configs['env']['LAUNCHER_PROJECT_NAME'], $value['default']);
+			}
+
+			if ($ask) {
+				$inputVal = $this->ask(new Question($value['text'], $value['default']));
+			}
+
+			if (strstr($inputVal, " ")) { $inputVal = "'$inputVal'";}
+			$this->configs['env'][$key] = $inputVal;
+		}
+	}
+
+	/**
+	 *
+	 */
+	protected function createDirectory () {
+		$this->fileSystem->mkdir($this->projectDirectory);
+	}
+
+	/**
+	 *
+	 */
 	protected function copyFilesToProject()
 	{
 		$directory = __DIR__ . DIRECTORY_SEPARATOR . "/..";
-
-		$this->fileSystem->mkdir($this->projectDirectory);
 		$this->fileSystem->mirror("$directory/files", "$this->projectDirectory");
 	}
 
@@ -194,14 +259,16 @@ class NewCommand extends BaseCommand
 	 */
 	protected function askIfConfigIsCorrect()
 	{
-		if (!$this->ask(new ConfirmationQuestion(
-			'Does this look ok? [yes|no] (yes)',
+		$apply = $this->ask(new ConfirmationQuestion(
+			'Does this look ok? [yes|no] (yes): ',
 			true,
 			'/^(y|j)/i'
-		))) {
+		));
+		if (!$apply) {
 			$this->header("Your config is not applied please run the command again");
-			return 0;
 		}
+
+		return $apply;
 	}
 
 	/**
@@ -216,5 +283,60 @@ class NewCommand extends BaseCommand
 		}
 
 		$this->info("Project Config is created at [$this->projectDirectory]");
+	}
+
+	/**
+	 *
+	 */
+	protected function initProject()
+	{
+		$repository =  $this->input->getOption('repository');
+
+		$commands = [
+			"git submodule init",
+			"git submodule update --merge --remote",
+		];
+
+		// If no repository is provided we initialize one
+		if (!$repository) {
+			array_unshift($commands,
+				"git init"
+			);
+			array_push($commands,
+				"git add -A",
+				"git commit -m 'Initial Commit'"
+			);
+		} else {
+			array_unshift($commands,
+				"git clone --recurse-submodules {$repository} ."
+			);
+		}
+		$this->runCommands($commands, $this->projectDirectory);
+	}
+
+	/**
+	 *
+	 */
+	protected function isInitialized()
+	{
+		return $this->fileSystem->exists($this->projectDirectory . DIRECTORY_SEPARATOR . ".git");
+	}
+
+	/**
+	 *
+	 */
+	protected function runStartCommand()
+	{
+		$command = $this->getApplication()->find('start');
+		try {
+			$command->run(
+				new ArrayInput([
+					'name' => $this->input->getArgument('name'),
+					'-f' => $this->input->getOption('force'),
+					'-d' => $this->input->getOption('default'),
+				]), $this->output);
+		} catch (\Exception $e) {
+			var_dump($e);
+		}
 	}
 }

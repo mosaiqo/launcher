@@ -14,6 +14,5 @@ $name = $composer['displayName'];
 $app = new Symfony\Component\Console\Application($name, $version);
 $app->add(new Mosaiqo\Launcher\Console\ConfigCommand);
 $app->add(new Mosaiqo\Launcher\Console\NewCommand);
-$app->add(new Mosaiqo\Launcher\Console\InitCommand);
 $app->add(new Mosaiqo\Launcher\Console\StartCommand);
 $app->run();

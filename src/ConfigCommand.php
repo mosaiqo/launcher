@@ -47,9 +47,13 @@ class ConfigCommand extends BaseCommand
 	public function execute(InputInterface $input, OutputInterface $output)
 	{
 		if ($this->envFileExists()) {
-			$this->overrideConfig();
-			$this->getConfigInformation();
+			if (!$this->overrideConfig()) {
+				return 0;
+			};
+			$this->removeConfig();
 		}
+
+		$this->getConfigInformation();
 
 		$this->createConfig();
 	}
@@ -57,20 +61,14 @@ class ConfigCommand extends BaseCommand
 
 	protected function overrideConfig()
 	{
-		$override = $this->input->getOption('force');
-
-		if (!$override) {
-			$override = $this->ask(
-				new ConfirmationQuestion (
-				'There is already a config file, do you want to override it? [yes/no] (no) ',
-				false,
-				'/^(y|j)/i'
-			));
-		}
-		// If we don´´ want to override the we just exit;
-		if (!$override) return 0;
-
-		$this->removeConfig();
+		$force = $this->input->getOption('force');
+		// If we don´t want to override the we just exit;
+		return $force?:$this->ask(
+			new ConfirmationQuestion (
+			'There is already a config file, do you want to override it? [yes/no] (no) ',
+			false,
+			'/^(y|j)/i'
+		));
 	}
 
 	protected function getConfigInformation()
