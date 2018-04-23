@@ -34,7 +34,8 @@ class StartCommand extends BaseCommand
 		$this
 			->setName('starts')
 			->setDescription('Starts a Launcher Project')
-			->addArgument('name', InputArgument::OPTIONAL)
+			->addArgument('name', InputArgument::REQUIRED)
+			->addArgument('services',  InputArgument::IS_ARRAY | InputArgument::OPTIONAL, 'The services you like to boot')
 			->addOption('default', 'd', InputOption::VALUE_NONE, 'Use default values for config')
 			->addOption('force', 'f', InputOption::VALUE_NONE, 'Overrides the files');
 	}
@@ -103,23 +104,42 @@ class StartCommand extends BaseCommand
 	 */
 	protected function bootServices()
 	{
-		$services = $this->finder->directories()->depth(0)->in($this->getServicesDirectory());
-		foreach ($services as $service) {
-			$serviceName = $service->getFilename();
-			// Service has no docker-composer.yml file therefore we skip it for now.
-			if (!$this->doesServiceHaveDockerFile($serviceName)) {
-				$this->write("\nSkipping Service <comment>$serviceName</comment>, because there is no docker-compose.yml file \n");
+		$services = [];
+		$existentServices = [];
+		$directories = $this->finder->directories()->depth(0)->in($this->getServicesDirectory());
+
+		foreach ($directories as $service) {
+			$services[] = $service->getFilename();
+			$existentServices[] = $service->getFilename();
+		}
+
+		// If the user provides service names we only want to boot this ones up
+		if ($this->input->getArgument('services')) {
+			$services = $this->input->getArgument('services');
+		};
+
+		foreach ($services as $serviceName) {
+			// Service does exist.
+			if (!in_array($serviceName, $existentServices)) {
+				$this->write("\nNo such service <comment>$serviceName</comment>");
+				$this->write("\n<comment>=============================</comment>\n\n\n");
 				continue;
 			}
+
+			// Service has no docker-composer.yml file therefore we skip it for now.
+			if (!$this->doesServiceHaveDockerFile($serviceName)) {
+				$this->write("\nSkipping Service <comment>$serviceName</comment>, because there is no docker-compose.yml file");
+				$this->write("\n<comment>==========================================================================</comment>\n\n\n");
+				continue;
+			}
+			$this->write("Booting up service: <comment>$serviceName</comment> ! \n");
+			$this->loadServiceEnvFile($serviceName);
 			$config = $this->loadConfigFileForProject($serviceName);
 
 			if ($config && $config['before']) {
 				$this->runBeforeConfigCommands($config, $serviceName);
 			}
 
-
-			$this->write("Booting up service: <comment>$serviceName</comment> ! \n");
-			$this->loadServiceEnvFile($serviceName);
 			$args = " -f docker-compose.yml";
 
 			// If service has also docker-composer.env.yml file we use this one then as well
@@ -236,8 +256,7 @@ class StartCommand extends BaseCommand
 		if ($isMySQLRunning) {
 			$this->info("MySQL is Running");
 			$databaseName = getenv('DB_DATABASE');
-			$dbExists = $this->runNonTtyCommand("docker exec -it dev-env-mysql mysql -e \"SHOW DATABASES LIKE '{$databaseName}';\"");
-
+			$dbExists = $this->runNonTtyCommand("docker exec dev-env-mysql mysql -N -s -r -e \"SHOW DATABASES LIKE '{$databaseName}';\"");
 			if ($dbExists) {
 				$this->info("DDBB {$databaseName} already exists!");
 				$remove = !$this->input->getOption('force') ? $this->ask(new ConfirmationQuestion(
@@ -249,7 +268,7 @@ class StartCommand extends BaseCommand
 				if ($remove) {
 					$this->info("Removing DDBB {$databaseName}!");
 					$this->runCommand("docker exec -it dev-env-mysql mysql -e \"DROP DATABASE {$databaseName};\"");
-					$dbExists = $this->runNonTtyCommand("docker exec -it dev-env-mysql mysql  -e \"SHOW DATABASES LIKE '{$databaseName}';\"");
+					$dbExists = $this->runNonTtyCommand("docker exec dev-env-mysql mysql -N -s -r -e \"SHOW DATABASES LIKE '{$databaseName}';\"");
 				}
 			}
 
@@ -299,7 +318,7 @@ class StartCommand extends BaseCommand
 		$rocketFile = $this->getRocketFileForService($serviceName);
 		$composerFile = $this->getComposerFileForService($serviceName);
 		if ($this->fileSystem->exists($rocketFile) && $this->fileSystem->exists($composerFile)) {
-			$this->runCommand("art migrate", $this->getDirectoryForService($serviceName));
+			$this->runCommand("./rocket art migrate", $this->getDirectoryForService($serviceName));
 		}
 	}
 
@@ -311,7 +330,7 @@ class StartCommand extends BaseCommand
 		$rocketFile = $this->getRocketFileForService($serviceName);
 		$composerFile = $this->getComposerFileForService($serviceName);
 		if ($this->fileSystem->exists($rocketFile) && $this->fileSystem->exists($composerFile)) {
-			$this->runCommand("art db:seed", $this->getDirectoryForService($serviceName));
+			$this->runCommand("./rocket art db:seed", $this->getDirectoryForService($serviceName));
 		}
 	}
 
@@ -340,18 +359,21 @@ class StartCommand extends BaseCommand
 			switch ($command) {
 				case 'db-create': $this->createDataBase($serviceName);
 					break;
-				case 'npm': $this->createDataBase($serviceName);
-					break;
-				case 'composer': $this->installComposerDependencies($serviceName);
-					break;
-				case 'migration': $this->migrateDatabase($serviceName);
+				case 'migrate': $this->migrateDatabase($serviceName);
 					break;
 				case 'seed': $this->seedDatabase($serviceName);
 					break;
+				case 'npm': $this->installNpmDependencies($serviceName);
+					break;
+				case 'composer': $this->installComposerDependencies($serviceName);
+					break;
+				default: $this->runSomeCommand($command, $serviceName);
 			}
-
 		}
+	}
 
-
+	protected function runSomeCommand($command, $serviceName)
+	{
+		$this->runCommand($command, $this->getDirectoryForService($serviceName));
 	}
 }
