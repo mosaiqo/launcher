@@ -105,7 +105,7 @@ class NewCommand extends BaseCommand
 	protected function createNewProject()
 	{
 		$this->projectDirectory = $this->getProjectDirectory();
-		$deleteIt = false;
+		$deleteIt = true;
 		$force = $this->input->getOption('force');
 		$onlyConfig = $this->input->getOption('config');
 		$createIt = $force?:$this->ask(new ConfirmationQuestion(
@@ -139,6 +139,7 @@ class NewCommand extends BaseCommand
 			$this->createDirectory();
 			$this->initProject();
 			$this->copyFilesToProject();
+			$this->addFilesToRepository();
 		}
 
 		$this->applyConfig();
@@ -212,8 +213,9 @@ class NewCommand extends BaseCommand
 			}
 
 			if ($key === "LAUNCHER_NETWORK_NAME") {
-				$value['text'] = str_replace('<projectname>', $this->configs['env']['LAUNCHER_PROJECT_NAME'], $value['text']);
-				$value['default'] = str_replace('<projectname>', $this->configs['env']['LAUNCHER_PROJECT_NAME'], $value['default']);
+				$networkName = strtolower($this->configs['env']['LAUNCHER_PROJECT_NAME']);
+				$value['text'] = str_replace('<projectname>',$networkName, $value['text']);
+				$value['default'] = str_replace('<projectname>',$networkName, $value['default']);
 			}
 
 			if ($ask) {
@@ -292,25 +294,21 @@ class NewCommand extends BaseCommand
 	{
 		$repository =  $this->input->getOption('repository');
 
-		$commands = [
-			"git submodule init",
-			"git submodule update --merge --remote",
-		];
+		$commands = [];
 
 		// If no repository is provided we initialize one
 		if (!$repository) {
-			array_unshift($commands,
-				"git init"
-			);
 			array_push($commands,
+				"git init",
 				"git add -A",
 				"git commit -m 'Initial Commit'"
 			);
 		} else {
-			array_unshift($commands,
+			array_push($commands,
 				"git clone --recurse-submodules {$repository} ."
 			);
 		}
+
 		$this->runCommands($commands, $this->projectDirectory);
 	}
 
@@ -338,5 +336,31 @@ class NewCommand extends BaseCommand
 		} catch (\Exception $e) {
 			var_dump($e);
 		}
+	}
+
+
+	/**
+	 *
+	 */
+	protected function addFilesToRepository()
+	{
+		$repository =  $this->input->getOption('repository');
+
+		$commands = [];
+
+		// If no repository is provided we initialize one
+		if (!$repository) {
+			array_push($commands,
+				"git add -A",
+				"git commit -m 'Initial Commit'"
+			);
+		} else {
+			array_push($commands,
+				"git submodule init",
+				"git submodule update --merge --remote"
+			);
+		}
+
+		$this->runCommands($commands, $this->projectDirectory);
 	}
 }

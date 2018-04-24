@@ -1,0 +1,15 @@
+[submodule "otherone"]
+	path = otherone
+	url = /Users/boudydegeer/Code/Kryptonite/services/otherone
+[submodule "otheronea"]
+	path = otheronea
+	url = /Users/boudydegeer/Code/Kryptonite/services/otheronea
+[submodule "test"]
+	path = test
+	url = /Users/boudydegeer/Code/Kryptonite/services/test
+[submodule "new"]
+	path = services/new
+	url = /Users/boudydegeer/Code/Kryptonite/services/new
+[submodule "oknow"]
+	path = services/oknow
+	url = /Users/boudydegeer/Code/Kryptonite/services/oknow
