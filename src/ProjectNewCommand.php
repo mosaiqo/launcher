@@ -312,7 +312,7 @@ class ProjectNewCommand extends BaseCommand
 	protected function copyFilesToProject()
 	{
 		$directory = __DIR__ . DIRECTORY_SEPARATOR . "/..";
-		$this->fileSystem->mirror("$directory/files", $this->project->directory());
+		$this->fileSystem->mirror("$directory/files/project", $this->project->directory());
 	}
 
 	/**
