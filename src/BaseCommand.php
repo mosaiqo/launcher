@@ -1,6 +1,8 @@
 <?php
 namespace Mosaiqo\Launcher\Console;
 
+use Mosaiqo\Launcher\Console\Exceptions\ExitException;
+use Symfony\Component\Console\Exception\LogicException;
 use Symfony\Component\Console\Question\Question;
 use Symfony\Component\Dotenv\Dotenv;
 use Symfony\Component\Finder\Finder;
@@ -188,6 +190,7 @@ class BaseCommand extends Command
 
 	/**
 	 * @return string
+	 * @throws ExitException
 	 */
 	protected function loadConfigForProject ($project) {
 		$finder = new Finder();
@@ -196,15 +199,14 @@ class BaseCommand extends Command
 		$files = $finder->in($this->getLauncherProjectsConfigDirectory());
 
 		if (count($files) === 0) {
-			$this->comment("Config file for {$project} could not be found!");
+			throw new ExitException("Config file for {$project} could not be found!");
 		}
 
 		foreach ($files as $file) {
 			$config = json_decode($file->getContents(), true);
 
 			if ($config === null) {
-				$this->comment("Config file for {$project} could not be loaded. Not a valid json?");
-				return;
+				throw new ExitException("Config file for {$project} could not be loaded. Not a valid json?");
 			}
 		}
 
@@ -342,5 +344,13 @@ class BaseCommand extends Command
 	protected function isLauncherProject()
 	{
 		return $this->fileSystem->exists($this->getLauncherFileForProject());
+	}
+
+	/**
+	 * @param ExitException $e
+	 */
+	protected function handleExitException(ExitException $e)
+	{
+		$this->comment($e->getMessage());
 	}
 }

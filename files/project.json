@@ -3,6 +3,7 @@
   "directory": LAUNCHER_PROJECT_DIRECTORY,
   "repository": LAUNCHER_REPOSITORY,
   "tld": LAUNCHER_TLD,
+  "services": [],
   "registry": {
     "url": LAUNCHER_REGISTRY_URL,
     "user": LAUNCHER_REGISTRY_USER,

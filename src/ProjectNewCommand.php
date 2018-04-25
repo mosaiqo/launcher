@@ -409,11 +409,11 @@ class ProjectNewCommand extends BaseCommand
 	 */
 	protected function runStartCommand()
 	{
-		$command = $this->getApplication()->find('start');
+		$command = $this->getApplication()->find('project:start');
 		try {
 			$command->run(
 				new ArrayInput([
-					'name' => $this->input->getArgument('name'),
+					'name' => $this->project->name(),
 					'-f' => $this->input->getOption('force'),
 					'-d' => $this->input->getOption('default'),
 				]), $this->output);
@@ -445,7 +445,7 @@ class ProjectNewCommand extends BaseCommand
 			);
 		}
 
-		$this->runCommands($commands, $this->projectDirectory);
+		$this->runCommands($commands, $this->project->directory());
 	}
 
 	/**

@@ -5,6 +5,7 @@ if (file_exists(__DIR__.'/../../autoload.php')) {
 } else {
     require __DIR__.'/vendor/autoload.php';
 }
+
 $content = file_get_contents(__DIR__ . DIRECTORY_SEPARATOR . 'composer.json');
 $composer = json_decode($content,true);
 $version = $composer['version'];
@@ -14,10 +15,12 @@ $name = $composer['displayName'];
 $app = new Symfony\Component\Console\Application($name, $version);
 $app->add(new Mosaiqo\Launcher\Console\ConfigCommand);
 $app->add(new Mosaiqo\Launcher\Console\NewCommand);
-# Project Commands
-$app->add(new Mosaiqo\Launcher\Console\ProjectNewCommand);
 $app->add(new Mosaiqo\Launcher\Console\StartCommand);
 $app->add(new Mosaiqo\Launcher\Console\StopCommand);
 $app->add(new Mosaiqo\Launcher\Console\OpenCommand);
 $app->add(new Mosaiqo\Launcher\Console\ServiceAddCommand);
+
+# New Project Commands
+$app->add(new Mosaiqo\Launcher\Console\ProjectNewCommand);
+$app->add(new Mosaiqo\Launcher\Console\ProjectStartCommand);
 $app->run();
