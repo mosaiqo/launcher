@@ -1,0 +1,13 @@
+{
+  "name": LAUNCHER_PROJECT_NAME,
+  "directory": LAUNCHER_PROJECT_DIRECTORY,
+  "repository": LAUNCHER_REPOSITORY,
+  "tld": LAUNCHER_TLD,
+  "registry": {
+    "url": LAUNCHER_REGISTRY_URL,
+    "user": LAUNCHER_REGISTRY_USER,
+    "token": LAUNCHER_REGISTRY_TOKEN
+  },
+  "network": LAUNCHER_NETWORK_NAME,
+  "editor": LAUNCHER_EDITOR
+}

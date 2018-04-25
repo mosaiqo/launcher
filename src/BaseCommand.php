@@ -35,6 +35,11 @@ class BaseCommand extends Command
 	protected $finder;
 
 	/**
+	 * @var
+	 */
+	protected $project;
+
+	/**
 	 * @param InputInterface $input
 	 * @param OutputInterface $output
 	 */
@@ -184,8 +189,41 @@ class BaseCommand extends Command
 	/**
 	 * @return string
 	 */
-	protected function getLauncherFileForProject () {
-		return $this->getProjectDirectory() . DIRECTORY_SEPARATOR . ".launcher";
+	protected function loadConfigForProject ($project) {
+		$finder = new Finder();
+		$finder->files()->name("{$project}.json");
+		$config = [];
+		$files = $finder->in($this->getLauncherProjectsConfigDirectory());
+
+		if (count($files) === 0) {
+			$this->comment("Config file for {$project} could not be found!");
+		}
+
+		foreach ($files as $file) {
+			$config = json_decode($file->getContents(), true);
+
+			if ($config === null) {
+				$this->comment("Config file for {$project} could not be loaded. Not a valid json?");
+				return;
+			}
+		}
+
+		$this->project = new Project($config);
+	}
+
+	/**
+	 * @return string
+	 */
+	protected function getLauncherProjectsConfigDirectory () {
+		return $this->getEnvDirectory() . DIRECTORY_SEPARATOR . 'projects';
+	}
+
+	/**
+	 * @param $name
+	 * @return string
+	 */
+	protected function getLauncherConfigFileForProject ($name) {
+		return $this->getLauncherProjectsConfigDirectory() . DIRECTORY_SEPARATOR . "$name.json";
 	}
 
 	/**
@@ -247,6 +285,11 @@ class BaseCommand extends Command
 		// The user provides us with a Home Directory
 		if ($dir[0].$dir[1] === "~/") {
 			$directory = $this->getHomeDirectory() . DIRECTORY_SEPARATOR . substr($dir, 2);
+		}
+
+		// If he wants to create it at the current directory
+		if ($dir[0].$dir[1] === "./") {
+			$directory = getcwd();
 		}
 
 		if (!$directory) {
