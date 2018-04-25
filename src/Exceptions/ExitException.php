@@ -1,6 +1,6 @@
 <?php
 
-namespace Mosaiqo\Launcher\Console\Exceptions;
+namespace Mosaiqo\Launcher\Exceptions;
 
 use Exception;
 

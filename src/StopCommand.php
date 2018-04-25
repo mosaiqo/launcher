@@ -1,6 +1,6 @@
 <?php
 
-namespace Mosaiqo\Launcher\Console;
+namespace Mosaiqo\Launcher;
 
 use Mosaiqo\Launcher\Console\BaseCommand;
 use Symfony\Component\Console\Input\InputArgument;

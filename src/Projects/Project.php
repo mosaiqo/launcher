@@ -1,10 +1,15 @@
 <?php
 
-namespace Mosaiqo\Launcher\Console;
+namespace Mosaiqo\Launcher\Projects;
 
 /**
  * Class Project
  * @package Mosaiqo\Launcher\Console
+ */
+/**
+ * Class Project
+ * @package Mosaiqo\Launcher\Projects
+ * @author Boudy de Geer <boudydegeer@mosaiqo.com>
  */
 class Project {
 
@@ -22,6 +27,9 @@ class Project {
 		$this->config = $config;
 	}
 
+	/**
+	 * @return mixed
+	 */
 	public function name()
 	{
 		return $this->config['name'];
@@ -46,7 +54,11 @@ class Project {
 	 * @return mixed
 	 */
 	public function registry ($field = null) {
-		if ($field && $this->config['registry'][$field]) {
+		if ($field) {
+			if (!$this->config['registry'][$field]) {
+				return "";
+			}
+
 			return $this->config['registry'][$field];
 		}
 

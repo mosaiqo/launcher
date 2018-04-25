@@ -1,9 +1,9 @@
 <?php
 
-namespace Mosaiqo\Launcher\Console;
+namespace Mosaiqo\Launcher\Console\Projects;
 
 use Mosaiqo\Launcher\Console\BaseCommand;
-use Mosaiqo\Launcher\Console\Exceptions\ExitException;
+use Mosaiqo\Launcher\Exceptions\ExitException;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -14,10 +14,10 @@ use Symfony\Component\Dotenv\Dotenv;
 use Symfony\Component\Finder\Finder;
 
 /**
- * Class ProjectStartCommand
+ * Class StartCommand
  * @package Mosaiqo\Launcher\Console
  */
-class ProjectStartCommand extends BaseCommand
+class StartCommand extends BaseCommand
 {
 
 	/**
@@ -55,30 +55,22 @@ class ProjectStartCommand extends BaseCommand
 	/**
 	 * @param InputInterface $input
 	 * @param OutputInterface $output
-	 * @return int
+	 * @return void
 	 */
 	public function execute(InputInterface $input, OutputInterface $output)
 	{
 		try {
-			$this->loadEnv();
-			$this->loadConfigForProject($this->input->getArgument('name'));
-			$this->startsProject();
+			$this->loadConfigForProject($this->projectName);
+			$this->info("Starting Launcher project {$this->projectName}\n");
+			$this->createNetwork();
+			$this->loginToRegistry();
+			$this->bootServices();
+
 		} catch (ExitException $e) {
 		 $this->handleExitException($e);
 		}
 	}
 
-	/**
-	 *
-	 */
-	protected function startsProject()
-	{
-		$name = $this->input->getArgument('name');
-		$this->info("Starting Launcher project $name\n");
-		$this->createNetwork();
-		$this->loginToRegistry();
-		$this->bootServices();
-	}
 
 	/**
 	 *
@@ -115,60 +107,52 @@ class ProjectStartCommand extends BaseCommand
 	 */
 	protected function bootServices()
 	{
-		$services = [];
-		$existentServices = [];
-		$directories = $this->finder->directories()->depth(0)->in($this->project->services());
-
-		foreach ($directories as $service) {
-			$services[] = $service->getFilename();
-			$existentServices[] = $service->getFilename();
-		}
+		$services = $this->getServicesForProject();
 
 		// If the user provides service names we only want to boot this ones up
-		if ($this->input->getArgument('services')) {
-			$services = $this->input->getArgument('services');
+		if ($this->input->hasArgument('services')) {
+			$services = array_intersect($services, $this->input->getArgument('services'));
 		};
 
-		foreach ($services as $serviceName) {
-			// Service does exist.
-			if (!in_array($serviceName, $existentServices)) {
-				$this->write("\nNo such service <comment>$serviceName</comment>");
-				$this->write("\n<comment>=============================</comment>\n\n\n");
+
+		foreach ($services as $service) {
+			if ( !$this->serviceExists($service) ) {
+				$this->write("\nNo such service <comment>$service</comment>\n\n");
 				continue;
 			}
 
 			// Service has no docker-composer.yml file therefore we skip it for now.
-			if (!$this->doesServiceHaveDockerFile($serviceName)) {
-				$this->write("\nSkipping Service <comment>$serviceName</comment>, because there is no docker-compose.yml file");
-				$this->write("\n<comment>==========================================================================</comment>\n\n\n");
+			if (!$this->doesServiceHaveDockerFile($service)) {
+				$this->write("\nSkipping Service <comment>$service</comment>, because there is no docker-compose.yml file\n\n");
 				continue;
 			}
 
-			$this->write("Booting up service: <comment>$serviceName</comment> ! \n");
-			$this->loadServiceEnvFile($serviceName);
-			$config = $this->loadConfigFileForProject($serviceName);
+			$this->write("Booting up service: <comment>$service</comment>! \n");
+			$this->loadServiceEnvFile($service);
+			$config = $this->loadLauncherConfigFileForProject($service);
 
 			if ($config && (!$config['git-pull'] || $config['git-pull'] === false)) {
-				$this->pullLatest($serviceName);
+				$this->pullLatest($service);
 			}
 
 			if ($config && $config['before']) {
-				$this->runBeforeConfigCommands($config, $serviceName);
+				$this->runBeforeConfigCommands($config, $service);
 			}
 
 			$args = " -f docker-compose.yml";
 
 			// If service has also docker-composer.env.yml file we use this one then as well
-			if ($this->doesServiceHaveDockerDevFile($serviceName)) {
+			if ($this->doesServiceHaveDockerDevFile($service)) {
 				$args .= " -f docker-compose.dev.yml";
 			}
 
 			if ($config && $config['after']) {
-				$this->runAfterConfigCommands($config, $serviceName);
+				$this->runAfterConfigCommands($config, $service);
 			}
 
 			$this->runCommand("docker-compose ${args} up -d --build --remove-orphans || exit 1",
-				$this->getDirectoryForService($serviceName));
+				$this->getDirectoryForService($service));
+
 		}
 	}
 
@@ -199,7 +183,7 @@ class ProjectStartCommand extends BaseCommand
 	 */
 	protected function getServicesDirectory()
 	{
-		return $this->getProjectDirectory() . DIRECTORY_SEPARATOR . 'services/';
+		return $this->project->directory() . DIRECTORY_SEPARATOR . 'services/';
 	}
 
 
@@ -402,5 +386,37 @@ class ProjectStartCommand extends BaseCommand
 
 			$this->runCommand("git pull", $this->getDirectoryForService($serviceName));
 		}
+	}
+
+	protected function getServicesForProject()
+	{
+		 return $this->project->services();
+//		$finder = new Finder;
+//		return $finder->directories()->depth(0)->in($this->getServicesDirectory());
+	}
+
+	protected function serviceExists($service)
+	{
+		return $this->fileSystem->exists($this->getDirectoryForService($service));
+	}
+
+	/**
+	 * @param $service
+	 * @return array|mixed
+	 */
+	protected function loadLauncherConfigFileForProject($service)
+	{
+		$fileName = 'launcher.json';
+		$configFile = $this->getFileForService($fileName, $service);
+		$config = [];
+		if ($this->fileSystem->exists($configFile)) {
+			$this->comment("Launcher config file found for $service \n");
+			$this->finder->files()->in($this->getDirectoryForService($service))->name($fileName);
+			foreach ($this->finder as $file) {
+				$content = $file->getContents();
+				$config = json_decode($content, true);
+			}
+		}
+		return $config;
 	}
 }

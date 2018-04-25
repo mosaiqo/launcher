@@ -1,8 +1,11 @@
 <?php
-namespace Mosaiqo\Launcher;
+namespace Mosaiqo\Launcher\Console;
 
-use Mosaiqo\Launcher\Console\Exceptions\ExitException;
+use Mosaiqo\Launcher\Exceptions\ExitException;
+use Mosaiqo\Launcher\Projects\Project;
 use Symfony\Component\Console\Exception\LogicException;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Question\ConfirmationQuestion;
 use Symfony\Component\Console\Question\Question;
 use Symfony\Component\Dotenv\Dotenv;
 use Symfony\Component\Finder\Finder;
@@ -41,6 +44,15 @@ class BaseCommand extends Command
 	 */
 	protected $project;
 
+
+	protected $force;
+
+
+	protected $useDefault;
+
+
+	protected $projectName;
+
 	/**
 	 * @param InputInterface $input
 	 * @param OutputInterface $output
@@ -52,6 +64,18 @@ class BaseCommand extends Command
 		$this->fileSystem = new Filesystem();
 		$this->output = $output;
 		$this->input = $input;
+		$this->force = $input->getOption('force');
+		$this->useDefault = $input->getOption('default');
+		$this->projectName = $input->hasArgument('name') ? $input->getArgument('name') : null;
+		$this->loadEnvironment($this->launcherEnvironmentFile());
+	}
+
+	/**
+	 * @param string $message
+	 */
+	protected function doneMessage($message = 'Done!')
+	{
+		$this->info($message);
 	}
 
 	/**
@@ -94,9 +118,42 @@ class BaseCommand extends Command
 		$this->write("<question>$message</question>", $newLine);
 	}
 
+	/**
+	 * @param Question $question
+	 * @return mixed
+	 */
 	protected function ask (Question $question) {
 		$helper = $this->getHelper('question');
 		return $helper->ask($this->input, $this->output, $question);
+	}
+
+	/**
+	 * @param string $question
+	 * @param bool $default
+	 * @param string $trueAnswerRegex
+	 * @return mixed
+	 */
+	protected function askConfirmation ($question, $default = true, $trueAnswerRegex = '/^(y|j)/i') {
+		$helper = $this->getHelper('question');
+		$defaultTrue = $default? 'yes' : 'no';
+		$question = "<comment>$question</comment> [yes/no] ($defaultTrue) :";
+		return $helper->ask($this->input, $this->output, 	new ConfirmationQuestion ($question, $default, $trueAnswerRegex));
+	}
+
+	/**
+	 * @param string $question
+	 * @param null $default
+
+	 * @return mixed
+	 */
+	protected function askForConfig ($question, $default = null) {
+		$helper = $this->getHelper('question');
+		$question = "<comment>$question</comment>";
+		$question .= $default ? " ($default): " : ": ";
+		$inputValue = $this->useDefault ? $default : $helper->ask($this->input, $this->output, 	new Question ($question, $default));
+		if (strstr($inputValue, " ")) { $inputValue = "'$inputValue'";}
+
+		return $inputValue;
 	}
 
 	/**
@@ -138,6 +195,14 @@ class BaseCommand extends Command
 		return $process->getOutput();
 	}
 
+	/**
+	 * @param string $cmd
+	 * @param null $directory
+	 * @param null $env
+	 * @param null $input
+	 * @param null $timeout
+	 * @return string
+	 */
 	protected function runNonTtyCommand($cmd = '', $directory = null, $env = null, $input = null, $timeout = null) {
 		return $this->runCommand($cmd, $directory, $env, $input, $timeout, false);
 	}
@@ -174,39 +239,32 @@ class BaseCommand extends Command
 		return empty($home) ? NULL : $home;
 	}
 
-	/**
-	 * @return string
-	 */
-	protected function getEnvDirectory () {
-		return $this->getHomeDirectory() . DIRECTORY_SEPARATOR . '.launcher';
-	}
 
 	/**
 	 * @return string
 	 */
 	protected function getProjectDirectory () {
-		return $this->getDirectory($this->input->getArgument('name'));
+		return $this->getDirectory($this->projectName);
 	}
 
 	/**
+	 * @param $projectName
 	 * @return string
 	 * @throws ExitException
 	 */
-	protected function loadConfigForProject ($project) {
-		$finder = new Finder();
-		$finder->files()->name("{$project}.json");
+	protected function loadConfigForProject ($projectName) {
 		$config = [];
-		$files = $finder->in($this->getLauncherProjectsConfigDirectory());
+		$files = $this->loadConfigFileForProject();
 
 		if (count($files) === 0) {
-			throw new ExitException("Config file for {$project} could not be found!");
+			throw new ExitException("Config file for {$projectName} could not be found!");
 		}
 
 		foreach ($files as $file) {
 			$config = json_decode($file->getContents(), true);
 
 			if ($config === null) {
-				throw new ExitException("Config file for {$project} could not be loaded. Not a valid json?");
+				throw new ExitException("Config file for {$projectName} could not be loaded. Not a valid json?");
 			}
 		}
 
@@ -216,8 +274,8 @@ class BaseCommand extends Command
 	/**
 	 * @return string
 	 */
-	protected function getLauncherProjectsConfigDirectory () {
-		return $this->getEnvDirectory() . DIRECTORY_SEPARATOR . 'projects';
+	protected function launcherProjectsDirectory () {
+		return $this->launcherEnvironmentDirectory() . DIRECTORY_SEPARATOR . 'projects';
 	}
 
 	/**
@@ -225,7 +283,8 @@ class BaseCommand extends Command
 	 * @return string
 	 */
 	protected function getLauncherConfigFileForProject ($name) {
-		return $this->getLauncherProjectsConfigDirectory() . DIRECTORY_SEPARATOR . "$name.json";
+		$name = strtolower($name);
+		return $this->launcherProjectsDirectory() . DIRECTORY_SEPARATOR . "$name.json";
 	}
 
 	/**
@@ -277,20 +336,24 @@ class BaseCommand extends Command
 
 		// We asume we want to create the project in the current working directory
 		if ($dir === "." || !$dir) {
+			 // die('.');
 			$directory = getcwd();
 		}
 
 		// The user provides us with an absolute route
 		if ($dir[0] === '/') {
+			 // die('/');
 			$directory = $dir;
 		}
 		// The user provides us with a Home Directory
 		if ($dir[0].$dir[1] === "~/") {
+			 // die('~/');
 			$directory = $this->getHomeDirectory() . DIRECTORY_SEPARATOR . substr($dir, 2);
 		}
 
 		// If he wants to create it at the current directory
 		if ($dir[0].$dir[1] === "./") {
+			 // die('./');
 			$directory = getcwd();
 		}
 
@@ -305,38 +368,58 @@ class BaseCommand extends Command
 	}
 
 	/**
+	 * Returns launcher Environment File Path
 	 * @return string
 	 */
-	protected function getEnvFile () {
-		$directory = $this->getEnvDirectory();
-		return $directory. DIRECTORY_SEPARATOR . '.env';
+	protected function launcherEnvironmentFile () {
+		return $this->launcherEnvironmentDirectory(). DIRECTORY_SEPARATOR . '.env';
 	}
 
-	/**
-	 *
-	 */
-	protected function loadEnv()
-	{
-		$dotenv = new Dotenv();
-		$dotenv->load($this->getEnvFile());
-	}
 
 	/**
-	 *
+	 * Returns launcher Environment Path
+	 * @return string
 	 */
-	protected function loadLauncherEnv()
-	{
-		$dotenv = new Dotenv();
-		$dotenv->load($this->getLauncherFileForProject());
+	protected function launcherEnvironmentDirectory () {
+		return $this->getHomeDirectory() . DIRECTORY_SEPARATOR . '.launcher';
 	}
 
 	/**
 	 * @return mixed
 	 */
-	protected function envFileExists()
+	protected function launcherEnvironmentFileExists()
 	{
-		return $this->fileSystem->exists($this->getEnvFile());
+		return $this->fileSystem->exists($this->launcherEnvironmentFile());
 	}
+
+
+	/**
+	 * @return mixed
+	 */
+	protected function launcherEnvironmentDirectoryExists()
+	{
+		return $this->fileSystem->exists($this->launcherEnvironmentDirectory());
+	}
+
+	/**
+	 *
+	 */
+	protected function loadLauncherEnvironment()
+	{
+		$this->loadEnvironment($this->launcherEnvironmentFile());
+	}
+
+	/**
+	 * @param null $path
+	 */
+	protected function loadEnvironment ($path = null)
+	{
+		if ($this->fileSystem->exists($path)) {
+			$dotenv = new Dotenv();
+			$dotenv->load($path);
+		}
+	}
+
 
 	/**
 	 * @return mixed
@@ -353,4 +436,86 @@ class BaseCommand extends Command
 	{
 		$this->comment($e->getMessage());
 	}
+
+	/**
+	 * @param Exception $e
+	 */
+	protected function handleException(\Exception $e)
+	{
+		$this->comment($e->getMessage());
+	}
+
+
+	/**
+	 * Whether launcher is already configured in the system or not.
+	 */
+	protected function isLauncherConfigured ()
+	{
+		return $this->launcherEnvironmentDirectoryExists()
+			&& $this->launcherEnvironmentFileExists();
+	}
+
+	/**
+	 *
+	 */
+	protected function loadCommonConfig ()
+	{
+		try {
+			$this->loadConfigForProject($this->projectName);
+		} catch (ExitException $e) {
+			$this->handleExitException($e);
+		}
+	}
+
+
+
+	/**
+	 * @return int
+	 */
+	protected function doesProjectExists () {
+		return count($this->loadConfigFileForProject()) !== 0 ;
+	}
+
+
+	protected function configureLauncher ()
+	{
+		$command = $this->getApplication()->find('config');
+		try {
+			$command->run(
+				new ArrayInput([
+					'-f' => $this->input->getOption('force'),
+					'-d' => $this->input->getOption('default'),
+				]), $this->output);
+		} catch (\Exception $e) {
+			$this->handleException($e);
+		}
+	}
+
+	/**
+	 * @return Finder
+	 */
+	protected function loadConfigFileForProject()
+	{
+		$name = strtolower($this->projectName);
+		$finder = new Finder();
+		$finder->files()->name("{$name}.json");
+
+		return $finder->in($this->launcherProjectsDirectory());
+	}
+
+	/**
+	 * @param array $value
+	 * @param string $template
+	 * @param string $replaceWith
+	 * @return array|mixed
+	 */
+	protected function replaceForConfig ($value = [], $template = '', $replaceWith = '')
+	{
+		if ($value['text'] && $value['default']) {
+			$value = str_replace($template, $replaceWith, $value);
+		}
+
+		return $value;
+	}
+
 }

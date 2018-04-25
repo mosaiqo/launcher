@@ -1,6 +1,6 @@
 <?php
 
-namespace Mosaiqo\Launcher\Console;
+namespace Mosaiqo\Launcher;
 
 use Mosaiqo\Launcher\Console\BaseCommand;
 use Symfony\Component\Console\Input\ArrayInput;
@@ -12,10 +12,10 @@ use Symfony\Component\Console\Question\ConfirmationQuestion;
 use Symfony\Component\Console\Question\Question;
 
 /**
- * Class NewCommand
+ * Class OldNewCommand
  * @package Mosaiqo\Launcher\Console
  */
-class NewCommand extends BaseCommand
+class OldNewCommand extends BaseCommand
 {
 	/**
 	 * @var array
