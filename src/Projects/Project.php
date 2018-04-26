@@ -30,6 +30,14 @@ class Project {
 	/**
 	 * @return mixed
 	 */
+	public function config()
+	{
+		return $this->config;
+	}
+
+	/**
+	 * @return mixed
+	 */
 	public function name()
 	{
 		return $this->config['name'];
@@ -70,5 +78,21 @@ class Project {
 	 */
 	public function services () {
 		return $this->config['services'];
+	}
+
+	/**
+	 * @return mixed
+	 */
+	public function update ($key, $services) {
+		if (key_exists($key, $this->config)) {
+			$this->config[$key] = $services;
+		}
+	}
+
+	/**
+	 * @return mixed
+	 */
+	public function repository () {
+		return $this->config['repository'];
 	}
 }

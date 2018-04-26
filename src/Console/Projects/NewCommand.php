@@ -134,6 +134,7 @@ class NewCommand extends BaseCommand
 			$this->initProject();
 			$this->copyFilesToProject();
 			$this->addFilesToRepository();
+			$this->updateServices();
 
 			if ($this->shouldBeStarted()) {
 				$this->runStartCommand();
@@ -290,7 +291,7 @@ class NewCommand extends BaseCommand
 	 */
 	protected function initProject()
 	{
-		$repository =  $this->input->getOption('repository');
+		$repository =  $this->project->repository();
 
 		$commands = [];
 
@@ -393,6 +394,10 @@ class NewCommand extends BaseCommand
 	 */
 	protected function shouldBeStarted()
 	{
-		return $this->input->getOption('start');
+		return $this->input->getOption('start') ?: $this->askConfirmation(
+			"Would you like to start the project now?",
+			true
+		);
+
 	}
 }

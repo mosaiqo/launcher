@@ -273,6 +273,22 @@ class BaseCommand extends Command
 
 	/**
 	 * @return string
+	 * @throws ExitException
+	 */
+	protected function saveConfigForProject () {
+		$config = json_encode($this->project->config());
+		$files = $this->loadConfigFileForProject();
+
+		if (count($files) === 0) {
+			throw new ExitException("Config file for {$this->projectName} could not be found!");
+		}
+		$fileName = $this->getLauncherConfigFileForProject($this->projectName);
+		$this->fileSystem->dumpFile($fileName, $config);
+		$this->text("Project config file <comment>$fileName</comment> was saved!\n");
+	}
+
+	/**
+	 * @return string
 	 */
 	protected function launcherProjectsDirectory () {
 		return $this->launcherEnvironmentDirectory() . DIRECTORY_SEPARATOR . 'projects';
@@ -288,43 +304,43 @@ class BaseCommand extends Command
 	}
 
 	/**
-	 * @param $serviceName
+	 * @param $service
 	 * @return string
 	 */
-	protected function getServiceFolderForService ($serviceName) {
-		return $this->getProjectDirectory() . DIRECTORY_SEPARATOR . 'services' . DIRECTORY_SEPARATOR . $serviceName;
+	protected function getServiceFolderForService ($service) {
+		return $this->getProjectDirectory() . DIRECTORY_SEPARATOR . $service['path'];
 	}
 
 	/**
-	 * @param $serviceName
+	 * @param $service
 	 * @return string
 	 */
-	protected function getRocketFileForService ($serviceName) {
-		return $this->getServiceFolderForService($serviceName) . DIRECTORY_SEPARATOR . "rocket";
+	protected function getRocketFileForService ($service) {
+		return $this->getServiceFolderForService($service) . DIRECTORY_SEPARATOR . "rocket";
 	}
 
 	/**
-	 * @param $serviceName
+	 * @param $service
 	 * @return string
 	 */
-	protected function getComposerFileForService ($serviceName) {
-		return $this->getServiceFolderForService($serviceName) . DIRECTORY_SEPARATOR . "composer.json";
+	protected function getComposerFileForService ($service) {
+		return $this->getServiceFolderForService($service) . DIRECTORY_SEPARATOR . "composer.json";
 	}
 
 	/**
-	 * @param $serviceName
+	 * @param $service
 	 * @return string
 	 */
-	protected function getGitForService ($serviceName) {
-		return $this->getServiceFolderForService($serviceName) . DIRECTORY_SEPARATOR . ".git";
+	protected function getGitForService ($service) {
+		return $this->getServiceFolderForService($service) . DIRECTORY_SEPARATOR . ".git";
 	}
 
 	/**
-	 * @param $serviceName
+	 * @param $service
 	 * @return string
 	 */
-	protected function getPackageFileForService ($serviceName) {
-		return $this->getServiceFolderForService($serviceName) . DIRECTORY_SEPARATOR . "package.json";
+	protected function getPackageFileForService ($service) {
+		return $this->getServiceFolderForService($service) . DIRECTORY_SEPARATOR . "package.json";
 	}
 
 	/**
@@ -518,4 +534,22 @@ class BaseCommand extends Command
 		return $value;
 	}
 
+	/**
+	 *
+	 */
+	protected function updateServices()
+	{
+		$names = $this->runNonTtyCommand(
+			'git submodule foreach --quiet \'echo {\"name\": \"${name}\", \"path\": \"${path}\"}===\''
+			, $this->project->directory());
+
+		$services = explode("===", $names);
+		$services = array_map(
+			function ($service) { return json_decode($service, true);},
+			array_filter($services, function($service) { return json_decode($service) !== null; })
+		);
+
+		$this->project->update('services', $services);
+		$this->saveConfigForProject();
+	}
 }

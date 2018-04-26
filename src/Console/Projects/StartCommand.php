@@ -46,7 +46,7 @@ class StartCommand extends BaseCommand
 			->setName('project:start')
 			->setDescription('Starts a Launcher Project')
 			->addArgument('name', InputArgument::REQUIRED)
-			->addArgument('services',  InputArgument::IS_ARRAY | InputArgument::OPTIONAL, 'The services you like to boot')
+			->addOption('service', 's',  InputOption::VALUE_IS_ARRAY | InputOption::VALUE_OPTIONAL, 'The services you like to boot')
 			->addOption('default', 'd', InputOption::VALUE_NONE, 'Use default values for config')
 			->addOption('force', 'f', InputOption::VALUE_NONE, 'Overrides the files')
 			->addOption('pull', 'p', InputOption::VALUE_NONE, 'Forces pull of latest commit in current branch!');
@@ -61,9 +61,11 @@ class StartCommand extends BaseCommand
 	{
 		try {
 			$this->loadConfigForProject($this->projectName);
+			$this->updateServices();
 			$this->info("Starting Launcher project {$this->projectName}\n");
 			$this->createNetwork();
-			$this->loginToRegistry();
+//			$this->loginToRegistry();
+
 			$this->bootServices();
 
 		} catch (ExitException $e) {
@@ -107,28 +109,33 @@ class StartCommand extends BaseCommand
 	 */
 	protected function bootServices()
 	{
-		$services = $this->getServicesForProject();
+		$services = $this->project->services();
 
 		// If the user provides service names we only want to boot this ones up
-		if ($this->input->hasArgument('services')) {
-			$services = array_intersect($services, $this->input->getArgument('services'));
+		if (!empty($this->input->getOption('service'))) {
+			$services = array_filter($services, function ($service) {
+				if (in_array($service['name'], $this->input->getOption('service'))) {
+					return $service;
+				}
+			});
 		};
 
-
 		foreach ($services as $service) {
+			$serviceName = $service['name'];
+
 			if ( !$this->serviceExists($service) ) {
-				$this->write("\nNo such service <comment>$service</comment>\n\n");
+				$this->write("\nNo such service <comment>$serviceName</comment>\n\n");
 				continue;
 			}
 
 			// Service has no docker-composer.yml file therefore we skip it for now.
 			if (!$this->doesServiceHaveDockerFile($service)) {
-				$this->write("\nSkipping Service <comment>$service</comment>, because there is no docker-compose.yml file\n\n");
+				$this->write("\nSkipping Service <comment>$serviceName</comment>, because there is no docker-compose.yml file\n\n");
 				continue;
 			}
 
-			$this->write("Booting up service: <comment>$service</comment>! \n");
-			$this->loadServiceEnvFile($service);
+			$this->write("Booting up service: <comment>$serviceName</comment>! \n");
+			$this->loadServiceEnvironmentFile($service);
 			$config = $this->loadLauncherConfigFileForProject($service);
 
 			if ($config && (!$config['git-pull'] || $config['git-pull'] === false)) {
@@ -151,22 +158,26 @@ class StartCommand extends BaseCommand
 			}
 
 			$this->runCommand("docker-compose ${args} up -d --build --remove-orphans || exit 1",
-				$this->getDirectoryForService($service));
+				$this->getServiceFolderForService($service));
 
 		}
 	}
 
 
 	/**
-	 * @param $serviceName
+	 * @param $service
 	 */
-	protected function loadServiceEnvFile($serviceName)
+	protected function loadServiceEnvironmentFile($service)
 	{
-		$file = $this->getFileForService('.env', $serviceName);
+		$envExampleFile = $this->getFileForService('.env.example', $service);
+		$envFile = $this->getFileForService('.env', $service);
 		$dotenv = new Dotenv();
-		if ($this->fileSystem->exists($file)) {
-			$dotenv->load($file);
+		if (!$this->fileSystem->exists($envFile)) {
+			$this->fileSystem->copy($envExampleFile, $envFile);
 		}
+
+		$dotenv->load($envFile);
+
 		$WWWUSER = (int)posix_getuid();
 		$dotenv->populate([
 			'UID' => $WWWUSER,
@@ -177,57 +188,38 @@ class StartCommand extends BaseCommand
 //		$this->runCommand("export WWWUSER=$WWWUSER");
 	}
 
-
-	/**
-	 * @return string
-	 */
-	protected function getServicesDirectory()
-	{
-		return $this->project->directory() . DIRECTORY_SEPARATOR . 'services/';
-	}
-
-
-	/**
-	 * @param $serviceName
-	 * @return string
-	 */
-	protected function getDirectoryForService($serviceName)
-	{
-		return $this->getServicesDirectory() . $serviceName;
-	}
-
 	/**
 	 * @param $file
-	 * @param $serviceName
+	 * @param $service
 	 * @return string
 	 */
-	protected function getFileForService($file, $serviceName)
+	protected function getFileForService($file, $service)
 	{
-		return $this->getServicesDirectory() . $serviceName . DIRECTORY_SEPARATOR . $file;
+		return $this->getServiceFolderForService($service) . DIRECTORY_SEPARATOR . $file;
 	}
 
 	/**
-	 * @param $serviceName
+	 * @param $service
 	 * @return mixed
 	 */
-	protected function doesServiceHaveDockerFile($serviceName)
+	protected function doesServiceHaveDockerFile($service)
 	{
-		return $this->fileSystem->exists($this->getFileForService('docker-compose.yml', $serviceName));
+		return $this->fileSystem->exists($this->getFileForService('docker-compose.yml', $service));
 	}
 
 	/**
-	 * @param $serviceName
+	 * @param $service
 	 * @return mixed
 	 */
-	protected function doesServiceHaveDockerDevFile($serviceName)
+	protected function doesServiceHaveDockerDevFile($service)
 	{
-		return $this->fileSystem->exists($this->getFileForService('docker-compose.dev.yml', $serviceName));
+		return $this->fileSystem->exists($this->getFileForService('docker-compose.dev.yml', $service));
 	}
 
 	/**
 	 *
 	 */
-	protected function createDataBase($serviceName)
+	protected function createDataBase($service)
 	{
 		$isMySQLRunning = $this->runNonTtyCommand("docker ps --filter=name=dev-env-mysql -q");
 		if ($isMySQLRunning) {
@@ -265,108 +257,112 @@ class StartCommand extends BaseCommand
 
 
 	/**
-	 * @param $serviceName
+	 * @param $service
 	 */
-	protected function installNpmDependencies($serviceName)
+	protected function installNpmDependencies($service)
 	{
-		$rocketFile = $this->getRocketFileForService($serviceName);
-		$npmFile = $this->getPackageFileForService($serviceName);
+		$rocketFile = $this->getRocketFileForService($service);
+		$npmFile = $this->getPackageFileForService($service);
 		if ($this->fileSystem->exists($rocketFile) && $this->fileSystem->exists($npmFile)) {
-			$this->runCommand("./rocket npm install", $this->getDirectoryForService($serviceName));
+			$this->runCommand("./rocket npm install", $this->getServiceFolderForService($service));
 		}
 
 	}
 
 	/**
-	 * @param $serviceName
+	 * @param $service
 	 */
-	protected function installComposerDependencies($serviceName)
+	protected function installComposerDependencies($service)
 	{
-		$rocketFile = $this->getRocketFileForService($serviceName);
-		$composerFile = $this->getComposerFileForService($serviceName);
+		$rocketFile = $this->getRocketFileForService($service);
+		$composerFile = $this->getComposerFileForService($service);
 		if ($this->fileSystem->exists($rocketFile) && $this->fileSystem->exists($composerFile)) {
-			$this->runCommand("./rocket composer install", $this->getDirectoryForService($serviceName));
+			$this->runCommand("./rocket composer install", $this->getServiceFolderForService($service));
 		}
 	}
 
 	/**
-	 * @param $serviceName
+	 * @param $service
 	 */
-	protected function migrateDatabase($serviceName)
+	protected function migrateDatabase($service)
 	{
-		$rocketFile = $this->getRocketFileForService($serviceName);
-		$composerFile = $this->getComposerFileForService($serviceName);
+		$rocketFile = $this->getRocketFileForService($service);
+		$composerFile = $this->getComposerFileForService($service);
 		if ($this->migrateDB && $this->fileSystem->exists($rocketFile) && $this->fileSystem->exists($composerFile)) {
-			$this->runCommand("./rocket art migrate", $this->getDirectoryForService($serviceName));
+			$this->runCommand("./rocket art migrate", $this->getServiceFolderForService($service));
 		}
 	}
 
 	/**
-	 * @param $serviceName
+	 * @param $service
 	 */
-	protected function seedDatabase($serviceName)
+	protected function seedDatabase($service)
 	{
-		$rocketFile = $this->getRocketFileForService($serviceName);
-		$composerFile = $this->getComposerFileForService($serviceName);
+		$rocketFile = $this->getRocketFileForService($service);
+		$composerFile = $this->getComposerFileForService($service);
 		if ($this->seedDB && $this->fileSystem->exists($rocketFile) && $this->fileSystem->exists($composerFile)) {
-			$this->runCommand("./rocket art db:seed", $this->getDirectoryForService($serviceName));
+			$this->runCommand("./rocket art db:seed", $this->getServiceFolderForService($service));
 		}
 	}
 
 
 	/**
 	 * @param $config
-	 * @param $serviceName
+	 * @param $service
 	 */
-	protected function runBeforeConfigCommands($config, $serviceName)
+	protected function runBeforeConfigCommands($config, $service)
 	{
-		return $this->runConfigCommands($config['before'], $serviceName);
+		return $this->runConfigCommands($config['before'], $service);
 	}
 
 	/**
 	 * @param $config
-	 * @param $serviceName
+	 * @param $service
 	 */
-	protected function runAfterConfigCommands($config, $serviceName) {
-		return $this->runConfigCommands($config['after'], $serviceName);
+	protected function runAfterConfigCommands($config, $service) {
+		return $this->runConfigCommands($config['after'], $service);
 	}
 
 
-	protected function runConfigCommands($config, $serviceName)
+	protected function runConfigCommands($config, $service)
 	{
 		foreach ($config as $command) {
 			switch ($command) {
-				case 'db-create': $this->createDataBase($serviceName);
+				case 'db-create': $this->createDataBase($service);
 					break;
-				case 'migrate': $this->migrateDatabase($serviceName);
+				case 'migrate': $this->migrateDatabase($service);
 					break;
-				case 'seed': $this->seedDatabase($serviceName);
+				case 'seed': $this->seedDatabase($service);
 					break;
-				case 'npm': $this->installNpmDependencies($serviceName);
+				case 'npm': $this->installNpmDependencies($service);
 					break;
-				case 'composer': $this->installComposerDependencies($serviceName);
+				case 'composer': $this->installComposerDependencies($service);
 					break;
-				default: $this->runSomeCommand($command, $serviceName);
+				default: $this->runSomeCommand($command, $service);
 			}
 		}
 	}
 
-	protected function runSomeCommand($command, $serviceName)
+	/**
+	 * @param $command
+	 * @param $service
+	 */
+	protected function runSomeCommand($command, $service)
 	{
-		$this->runCommand($command, $this->getDirectoryForService($serviceName));
+		$this->runCommand($command, $this->getServiceFolderForService($service));
 	}
 
 	/**
-	 * @param $serviceName
+	 * @param $service
 	 */
-	protected function pullLatest($serviceName)
+	protected function pullLatest($service)
 	{
-		$git = $this->getGitForService($serviceName);
+		$git = $this->getGitForService($service);
 		if ($this->fileSystem->exists($git) &&  $this->input->getOption('pull')) {
 			$hasChanges = false;
-			$this->write("\nPulling latest commit for <comment>$serviceName</comment>\n");
+			$this->write("\nPulling latest commit for <comment>{$service['name']}</comment>\n");
 
-			$gitStatus = $this->runNonTtyCommand("git status", $this->getDirectoryForService($serviceName));
+			$gitStatus = $this->runNonTtyCommand("git status", $this->getServiceFolderForService($service));
 
 			if(strstr($gitStatus, "Nothing to commit") !== -1) {
 				$hasChanges = true;
@@ -375,29 +371,26 @@ class StartCommand extends BaseCommand
 
 			if ($hasChanges) {
 				$cleanUp = !$force ? $this->ask(new ConfirmationQuestion(
-					"Git repository fot {$serviceName} not clean, do you want to clean it? [Y|N] (No): ",
+					"Git repository fot {$service['name']} not clean, do you want to clean it? [Y|N] (No): ",
 					false,
 					'/^(y|j)/i'
 				)) : true;
 				if ($cleanUp) {
-					$this->runCommand("git checkout -f", $this->getDirectoryForService($serviceName));
+					$this->runCommand("git checkout -f", $this->getServiceFolderForService($service));
 				}
 			}
 
-			$this->runCommand("git pull", $this->getDirectoryForService($serviceName));
+			$this->runCommand("git pull", $this->getServiceFolderForService($service));
 		}
 	}
 
-	protected function getServicesForProject()
-	{
-		 return $this->project->services();
-//		$finder = new Finder;
-//		return $finder->directories()->depth(0)->in($this->getServicesDirectory());
-	}
-
+	/**
+	 * @param $service
+	 * @return mixed
+	 */
 	protected function serviceExists($service)
 	{
-		return $this->fileSystem->exists($this->getDirectoryForService($service));
+		return $this->fileSystem->exists($this->getServiceFolderForService($service));
 	}
 
 	/**
@@ -410,8 +403,8 @@ class StartCommand extends BaseCommand
 		$configFile = $this->getFileForService($fileName, $service);
 		$config = [];
 		if ($this->fileSystem->exists($configFile)) {
-			$this->comment("Launcher config file found for $service \n");
-			$this->finder->files()->in($this->getDirectoryForService($service))->name($fileName);
+			$this->text("Launcher config file found for <comment>{$service['name']}</comment>\n");
+			$this->finder->files()->in($this->getServiceFolderForService($service))->name($fileName);
 			foreach ($this->finder as $file) {
 				$content = $file->getContents();
 				$config = json_decode($content, true);
