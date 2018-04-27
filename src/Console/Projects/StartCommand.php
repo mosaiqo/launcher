@@ -172,6 +172,11 @@ class StartCommand extends BaseCommand
 		$envExampleFile = $this->getFileForService('.env.example', $service);
 		$envFile = $this->getFileForService('.env', $service);
 		$dotenv = new Dotenv();
+
+		if (!$this->fileSystem->exists($envExampleFile)) {
+			return;
+		}
+
 		if (!$this->fileSystem->exists($envFile)) {
 			$this->fileSystem->copy($envExampleFile, $envFile);
 		}
@@ -183,7 +188,7 @@ class StartCommand extends BaseCommand
 			'UID' => $WWWUSER,
 			'WWWUSER' => $WWWUSER,
 			'XDEBUG_HOST' => '127.0.0.1',
-			'TLD' => getenv('LAUNCHER_TLD'),
+			'TLD' => $this->project->tld(),
 		]);
 //		$this->runCommand("export WWWUSER=$WWWUSER");
 	}

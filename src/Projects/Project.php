@@ -46,6 +46,14 @@ class Project {
 	/**
 	 * @return mixed
 	 */
+	public function tld()
+	{
+		return $this->config['tld'];
+	}
+
+	/**
+	 * @return mixed
+	 */
 	public function directory () {
 		return $this->config['directory'];
 	}

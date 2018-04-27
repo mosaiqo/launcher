@@ -81,6 +81,11 @@ class NewCommand extends BaseCommand
 	protected $overrideProject = false;
 
 	/**
+	 * @var
+	 */
+	protected $useExistentConfig = false;
+
+	/**
 	 * Configure the command options.
 	 *
 	 * @return void
@@ -115,16 +120,24 @@ class NewCommand extends BaseCommand
 				$this->askToOverrideProject();
 
 				if (!$this->shouldBeOverWritten()) {
+					$this->askToUseExistentConfig();
+				}
+
+				if (!$this->shouldBeOverWritten() && !$this->shouldUseExistentConfig()) {
 					throw new ExitException("Launcher Project already exists!");
 				}
 
-				$this->removeExistentConfigForProject();
+				if ($this->shouldBeOverWritten() && !$this->shouldUseExistentConfig()){
+					$this->removeExistentConfigForProject();
+				}
 			}
 
-			$this->getInfoForConfig();
-			$this->showConfigToApply();
-			$this->askIfConfigIsCorrect();
-			$this->saveConfig();
+			if (!$this->shouldUseExistentConfig()) {
+				$this->getInfoForConfig();
+				$this->showConfigToApply();
+				$this->askIfConfigIsCorrect();
+				$this->saveConfig();
+			}
 
 			$this->loadCommonConfig();
 
@@ -376,8 +389,20 @@ class NewCommand extends BaseCommand
 	protected function askToOverrideProject()
 	{
 		$this->overrideProject = $this->force ?: $this->askConfirmation(
-			"This project already exists,\nit will be over written and this can not be undone are you sure?",
+			"This project already exists, do you want to remove the existent config?",
 			false
+		);
+	}
+
+
+	/**
+	 * @return void
+	 */
+	protected function askToUseExistentConfig()
+	{
+		$this->useExistentConfig = $this->force ?: $this->askConfirmation(
+			"This project already exists, do you want to use existent config?",
+			true
 		);
 	}
 
@@ -387,6 +412,14 @@ class NewCommand extends BaseCommand
 	protected function shouldBeOverWritten()
 	{
 		return $this->overrideProject;
+	}
+
+	/**
+	 * @return bool
+	 */
+	protected function shouldUseExistentConfig()
+	{
+		return $this->useExistentConfig;
 	}
 
 	/**
