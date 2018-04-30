@@ -2,7 +2,7 @@
   "name": "mosaiqo/launcher",
   "displayName": "Mosaiqo Launcher",
   "description": "Command for development to work in Mosaiqo SpaceStation environment",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "require": {
     "ext-zip": "*",
     "guzzlehttp/guzzle": "~6.0",
