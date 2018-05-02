@@ -127,7 +127,7 @@ class StartCommand extends BaseCommand
 				$this->write("\nNo such service <comment>$serviceName</comment>\n\n");
 				continue;
 			}
-
+			$this->write($this->getServiceFolderForService($service)."\n\n");
 			// Service has no docker-composer.yml file therefore we skip it for now.
 			if (!$this->doesServiceHaveDockerFile($service)) {
 				$this->write("\nSkipping Service <comment>$serviceName</comment>, because there is no docker-compose.yml file\n\n");
@@ -137,7 +137,7 @@ class StartCommand extends BaseCommand
 			$this->write("Booting up service: <comment>$serviceName</comment>! \n");
 			$this->loadServiceEnvironmentFile($service);
 			$config = $this->loadLauncherConfigFileForProject($service);
-
+			$this->write("Let's boot the scripts\n");
 			if ($config && (!$config['git-pull'] || $config['git-pull'] === false)) {
 				$this->pullLatest($service);
 			}
@@ -183,7 +183,7 @@ class StartCommand extends BaseCommand
 
 		$dotenv->load($envFile);
 
-		$WWWUSER = (int)posix_getuid();
+		$WWWUSER = (int)posix_getuid()?:501 ;
 		$dotenv->populate([
 			'UID' => $WWWUSER,
 			'WWWUSER' => $WWWUSER,

@@ -244,7 +244,7 @@ class BaseCommand extends Command
 	 * @return string
 	 */
 	protected function getProjectDirectory () {
-		return $this->getDirectory($this->projectName);
+		return $this->getDirectory($this->project->directory());
 	}
 
 	/**
