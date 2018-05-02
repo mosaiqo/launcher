@@ -64,8 +64,8 @@ class BaseCommand extends Command
 		$this->fileSystem = new Filesystem();
 		$this->output = $output;
 		$this->input = $input;
-		$this->force = $input->getOption('force');
-		$this->useDefault = $input->getOption('default');
+		$this->force = $input->hasOption('force') ? $input->getOption('force') : false;
+		$this->useDefault = $input->hasOption('default') ? $input->getOption('default') : false;
 		$this->projectName = $input->hasArgument('name') ? $input->getArgument('name') : null;
 		$this->loadEnvironment($this->launcherEnvironmentFile());
 	}

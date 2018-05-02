@@ -28,4 +28,5 @@ $app->add(new Mosaiqo\Launcher\Console\Launcher\ConfigCommand);
 # Project Commands
 $app->add(new Mosaiqo\Launcher\Console\Projects\NewCommand);
 $app->add(new Mosaiqo\Launcher\Console\Projects\StartCommand);
+$app->add(new Mosaiqo\Launcher\Console\Projects\ListCommand);
 $app->run();
