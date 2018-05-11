@@ -138,6 +138,7 @@ class StartCommand extends BaseCommand
 			$this->loadServiceEnvironmentFile($service);
 			$config = $this->loadLauncherConfigFileForProject($service);
 			$this->write("Let's boot the scripts\n");
+
 			if ($config && (!$config['git-pull'] || $config['git-pull'] === false)) {
 				$this->pullLatest($service);
 			}
@@ -338,8 +339,6 @@ class StartCommand extends BaseCommand
 				case 'migrate': $this->migrateDatabase($service);
 					break;
 				case 'seed': $this->seedDatabase($service);
-					break;
-				case 'npm': $this->installNpmDependencies($service);
 					break;
 				case 'composer': $this->installComposerDependencies($service);
 					break;
