@@ -142,7 +142,6 @@ class StartCommand extends BaseCommand
 			if ($config && (!$config['git-pull'] || $config['git-pull'] === false)) {
 				$this->pullLatest($service);
 			}
-
 			if ($config && $config['before']) {
 				$this->runBeforeConfigCommands($config, $service);
 			}
@@ -336,11 +335,6 @@ class StartCommand extends BaseCommand
 			switch ($command) {
 				case 'db-create': $this->createDataBase($service);
 					break;
-				case 'migrate': $this->migrateDatabase($service);
-					break;
-				case 'seed': $this->seedDatabase($service);
-					break;
-				case 'composer': $this->installComposerDependencies($service);
 					break;
 				default: $this->runSomeCommand($command, $service);
 			}
@@ -353,6 +347,8 @@ class StartCommand extends BaseCommand
 	 */
 	protected function runSomeCommand($command, $service)
 	{
+		$this->write("\nRunning Command <info>{$command}</info> for service <comment>{$service['name']}</comment>\n");
+
 		$this->runCommand($command, $this->getServiceFolderForService($service));
 	}
 
@@ -406,6 +402,7 @@ class StartCommand extends BaseCommand
 		$fileName = 'launcher.json';
 		$configFile = $this->getFileForService($fileName, $service);
 		$config = [];
+
 		if ($this->fileSystem->exists($configFile)) {
 			$this->text("Launcher config file found for <comment>{$service['name']}</comment>\n");
 			$this->finder->files()->in($this->getServiceFolderForService($service))->name($fileName);
