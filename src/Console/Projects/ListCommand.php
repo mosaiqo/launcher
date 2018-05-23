@@ -74,6 +74,9 @@ class ListCommand extends BaseCommand
 		$this->files = $finder->files()->in($this->launcherProjectsDirectory());
 	}
 
+	/**
+	 *
+	 */
 	public function listProjects()
 	{
 		$table = new Table($this->output);

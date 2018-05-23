@@ -312,6 +312,13 @@ class BaseCommand extends Command
 	}
 
 	/**
+	 * @return string
+	 */
+	protected function getServicesFolderForProject () {
+		return $this->getProjectDirectory() . DIRECTORY_SEPARATOR . 'services';
+	}
+
+	/**
 	 * @param $service
 	 * @return string
 	 */

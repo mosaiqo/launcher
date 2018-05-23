@@ -13,3 +13,6 @@
 [submodule "oknow"]
 	path = services/oknow
 	url = /Users/boudydegeer/Code/Kryptonite/services/oknow
+[submodule "web"]
+	path = services/web
+	url = /Users/boudydegeer/Code/Kryptonite/app/services

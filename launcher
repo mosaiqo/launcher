@@ -31,4 +31,7 @@ $app->add(new Mosaiqo\Launcher\Console\Projects\StartCommand);
 $app->add(new Mosaiqo\Launcher\Console\Projects\ListCommand);
 $app->add(new Mosaiqo\Launcher\Console\Projects\InspectCommand);
 $app->add(new Mosaiqo\Launcher\Console\Projects\RemoveCommand);
+
+# Services Commands
+$app->add(new Mosaiqo\Launcher\Console\Services\AddCommand);
 $app->run();
