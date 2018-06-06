@@ -79,6 +79,7 @@ class ServiceAddCommand extends BaseCommand
 	 */
 	protected function addService()
 	{
+		die('aki');
 		$serviceName = $this->input->getArgument('service');
 		$existentServices = [];
 		$directories = $this->finder->directories()->depth(0)->in($this->getServicesDirectory());
@@ -205,16 +206,22 @@ class ServiceAddCommand extends BaseCommand
 	{
 		if ($this->serviceType !== null) return;
 
-		$type = $this->input->getOption('type');
+		if ($this->repository !== null) {
+			$type = array_search('git', $this->serviceTypes);
+		}
+		var_dump($type); die;
+		if (!$type) {
+			$type = $this->input->getOption('type');
 
-		if (!$type || !in_array($type, $this->serviceTypes)) {
-			$type = $this->ask(
-				new ChoiceQuestion(
-					'Please select the type of service you would like to install ('. $this->serviceTypes[0] .'): ',
-					 $this->serviceTypes,
-					'1'
-				)
-			);
+			if (!in_array($type, $this->serviceTypes)) {
+				$type = $this->ask(
+					new ChoiceQuestion(
+						'Please select the type of service you would like to install ('. $this->serviceTypes[0] .'): ',
+						$this->serviceTypes,
+						'1'
+					)
+				);
+			}
 		}
 
 		$this->serviceType = $type;
@@ -235,6 +242,7 @@ class ServiceAddCommand extends BaseCommand
 				$this->repository = $this->repository ? : $this->ask(
 					new Question('Please give us the repository to initialize: ')
 				);
+				$cmd = "git clone {$this->repository} {$serviceName} || exit 1";
 				break;
 			case 'laravel-app':
 			case 'laravel-api':

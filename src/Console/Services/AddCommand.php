@@ -42,6 +42,11 @@ class AddCommand extends BaseCommand
 	protected $repository;
 
 	/**
+	 * @var
+	 */
+	protected $isNotClean;
+
+	/**
 	 * Configure the command options.
 	 *
 	 * @return void
@@ -65,6 +70,7 @@ class AddCommand extends BaseCommand
 	public function execute(InputInterface $input, OutputInterface $output)
 	{
 		try {
+			$this->repository = $input->hasOption('repository') ? $input->getOption('repository') : null;
 			if (!$this->isLauncherConfigured()) {
 				$this->info("Launcher is not configured!");
 			}
@@ -93,7 +99,7 @@ class AddCommand extends BaseCommand
 		}
 
 		$this->write("Creating new service: <comment>$serviceName</comment>!\n");
-
+		$this->isClean();
 		$this->getServiceType();
 		$this->createServiceByType($serviceName);
 		$this->initGitRepository($serviceName);
@@ -110,14 +116,23 @@ class AddCommand extends BaseCommand
 
 		$type = $this->input->getOption('type');
 
-		if (!$type || !in_array($type, $this->serviceTypes)) {
-			$type = $this->ask(
-				new ChoiceQuestion(
-					'Please select the type of service you would like to install ('. $this->serviceTypes[0] .'): ',
-					 $this->serviceTypes,
-					'1'
-				)
-			);
+		if ($this->repository !== null) {
+			$key = array_search('git', $this->serviceTypes);
+			$type = $this->serviceTypes[$key];
+		}
+
+		if (!$type) {
+			$type = $this->input->getOption('type');
+
+			if (!in_array($type, $this->serviceTypes)) {
+				$type = $this->ask(
+					new ChoiceQuestion(
+						'Please select the type of service you would like to install ('. $this->serviceTypes[0] .'): ',
+						$this->serviceTypes,
+						'1'
+					)
+				);
+			}
 		}
 
 		$this->serviceType = $type;
@@ -131,8 +146,6 @@ class AddCommand extends BaseCommand
 	{
 		$cmd = null;
 
-		$this->repository =  $this->input->getOption('repository');
-
 		switch ($this->serviceType) {
 			case 'git':
 				$this->repository = $this->repository ? : $this->ask(
@@ -143,6 +156,7 @@ class AddCommand extends BaseCommand
 					$this->info("We need a repository to continue");
 					return 1;
 				}
+				$cmd = "git clone {$this->repository} {$serviceName} || exit 1";
 				break;
 			case 'laravel-app':
 			case 'laravel-api':
@@ -156,6 +170,8 @@ class AddCommand extends BaseCommand
 			default;
 				return 0;
 		}
+
+		var_dump($this->getServicesFolderForProject(), $cmd);
 
 		if ($cmd) {
 			$this->runCommand($cmd, $this->getServicesFolderForProject());
@@ -183,6 +199,14 @@ class AddCommand extends BaseCommand
 	}
 
 	/**
+	 * @return void
+	 */
+	protected function isClean()
+	{
+		$this->isNotClean = $this->runNonTtyCommand('git status --untracked-files=no --porcelain', $this->getProjectDirectory());
+	}
+
+	/**
 	 * @param $serviceName
 	 * @return void
 	 */
@@ -198,19 +222,15 @@ class AddCommand extends BaseCommand
 			array_push($commands, "git submodule add --name {$serviceName} {$this->repository} services/{$serviceName}");
 		}
 
-		$isClean = $this->runNonTtyCommand('git status --untracked-files=no --porcelain', $this->getProjectDirectory());
-
-		$this->info($isClean);
-
-		if ($isClean) {
+		if (!$this->isNotClean) {
 			array_push($commands,
 				"git add -A",
 				"git commit -m 'Add service {$serviceName} as submodule.'"
 			);
 		} else {
 			$this->error("We could not commit because you repository is not clean, you need to commit it your self");
-			$this->write("You can do:");
-			$this->write("git add services/{$serviceName} .gitmodules");
+			$this->write("You can do:\n");
+			$this->write("git add services/{$serviceName} .gitmodules \n");
 			$this->write("git commit -m 'Add service {$serviceName} as submodule.'");
 		}
 

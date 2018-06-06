@@ -146,7 +146,7 @@ class StartCommand extends BaseCommand
 				$this->runBeforeConfigCommands($config, $service);
 			}
 
-			$args = " -f docker-compose.yml";
+			$args = "-f docker-compose.yml";
 
 			// If service has also docker-composer.env.yml file we use this one then as well
 			if ($this->doesServiceHaveDockerDevFile($service)) {
@@ -157,8 +157,12 @@ class StartCommand extends BaseCommand
 				$this->runAfterConfigCommands($config, $service);
 			}
 
-			$this->runCommand("docker-compose ${args} up -d --build --remove-orphans || exit 1",
-				$this->getServiceFolderForService($service));
+			$args .= " -p {$this->projectName}";
+
+			$this->runCommand(
+				"docker-compose ${args} up -d --build --remove-orphans || exit 1",
+				$this->getServiceFolderForService($service)
+			);
 
 		}
 	}
