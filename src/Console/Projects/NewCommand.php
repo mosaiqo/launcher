@@ -41,7 +41,7 @@ class NewCommand extends BaseCommand
 		],
 		'LAUNCHER_REGISTRY_URL' => [
 			'text' => 'Which docker registry do you want to use?',
-			'default' => null,
+			'default' => 'registry.gitlab.com',
 		],
 		'LAUNCHER_REGISTRY_USER' => [
 			'text' => 'Which is the user to connect to the registry?',
@@ -135,18 +135,23 @@ class NewCommand extends BaseCommand
 			if (!$this->shouldUseExistentConfig()) {
 				$this->getInfoForConfig();
 				$this->showConfigToApply();
-				$this->askIfConfigIsCorrect();
+				if (!$this->askIfConfigIsCorrect()) {
+					throw new ExitException("Your config is not applied please run the command again!");
+					return 0;
+				}
 				$this->saveConfig();
 			}
 
 			$this->loadCommonConfig();
 
-			$this->removeExistentDirectory();
-			$this->createProjectDirectory();
+			if ($this->setUpAsNewProject()) {
+				$this->removeExistentDirectory();
+				$this->createProjectDirectory();
+				$this->initProject();
+				$this->addFilesToRepository();
+			}
 
-			$this->initProject();
 			$this->copyFilesToProject();
-			$this->addFilesToRepository();
 			$this->updateServices();
 
 			if ($this->shouldBeStarted()) {
@@ -163,6 +168,15 @@ class NewCommand extends BaseCommand
 	 */
 	protected function getInfoForConfig()
 	{
+		$justAskedProjectName = false;
+		if (!$this->projectName && $this->defaults['LAUNCHER_PROJECT_NAME']) {
+			$this->projectName = $this->askForConfig($this->defaults['LAUNCHER_PROJECT_NAME']['text']);
+
+			if ($this->projectName) {
+				$justAskedProjectName = true;
+			}
+		}
+
 		 //$this->useDefault
 		foreach ($this->defaults as $key => $value) {
 			$ask = true;
@@ -172,12 +186,17 @@ class NewCommand extends BaseCommand
 				$name = $this->projectName;
 				$name = strpos($name, '/') !== false ? end(explode('/', $name)) : $name;
 				$value = $this->replaceForConfig($value, '<projectname>', $name);
+
+				if ($justAskedProjectName) {
+					$inputValue = $name;
+					$ask = false;
+				}
 			}
 
 			if ($key === "LAUNCHER_PROJECT_DIRECTORY") {
 				$directory = $this->input->getOption('directory') ?
 					$this->input->getOption('directory') :
-					strtolower($this->projectName);
+					$this->projectName;
 				$value = $this->replaceForConfig($value, '<projectdirectory>', $this->getDirectory($directory));
 			}
 
@@ -188,7 +207,7 @@ class NewCommand extends BaseCommand
 			}
 
 			if ($key === "LAUNCHER_NETWORK_NAME") {
-				$networkName = strtolower($this->configs['env']['LAUNCHER_PROJECT_NAME']);
+				$networkName = strtolower($this->projectName);
 				$value = $this->replaceForConfig($value, '<projectname>', $networkName);
 			}
 
@@ -226,9 +245,21 @@ class NewCommand extends BaseCommand
 	 */
 	protected function removeExistentDirectory()
 	{
-		if ($this->projectDirectoryExists()) {
+		if ($this->projectDirectoryExists() && $this->askConfirmation("Directory already exists, do you want to remove it?", false)) {
 			$this->fileSystem->remove($this->project->directory());
 		}
+	}
+
+	/**
+	 *
+	 */
+	protected function setUpAsNewProject()
+	{
+		if ($this->projectDirectoryExists() && $this->askConfirmation("Directory already exists, is this an existent project, just add it?", true)) {
+			return false;
+		}
+
+		return true;
 	}
 
 	/**
@@ -263,17 +294,11 @@ class NewCommand extends BaseCommand
 	}
 
 	/**
-	 * @return void
+	 * @return bool
 	 */
 	protected function askIfConfigIsCorrect()
 	{
-		try {
-			if ($this->force ?: $this->askConfirmation('Does this look ok?', true)) {
-				throw new ExitException("Your config is not applied please run the command again");
-			}
-		} catch (ExitException $exception) {
-			$this->handleExitException($exception);
-		}
+		return $this->force?:$this->askConfirmation('Does this look ok?', true);
 	}
 
 	/**
@@ -294,7 +319,7 @@ class NewCommand extends BaseCommand
 			$content = str_replace($KEY, "\"$value\"", $content);
 		}
 		$fileName = $this->getLauncherConfigFileForProject($this->projectName);
-		$this->fileSystem->appendToFile($fileName, $content);
+		$this->fileSystem->dumpFile($fileName, $content);
 
 		$this->text("Project config file <comment>$fileName</comment> was saved!\n");
 	}
@@ -317,7 +342,8 @@ class NewCommand extends BaseCommand
 			);
 		} else {
 			array_push($commands,
-				"git clone --recurse-submodules {$repository} ."
+				"git clone --recurse-submodules {$repository} .",
+				"git submodule -q foreach git checkout master"
 			);
 		}
 
@@ -341,7 +367,7 @@ class NewCommand extends BaseCommand
 		try {
 			$command->run(
 				new ArrayInput([
-					'name' => $this->project->name(),
+					'name' => $this->project->name() ?: $this->projectName,
 					'-f' => $this->input->getOption('force'),
 					'-d' => $this->input->getOption('default'),
 				]), $this->output);

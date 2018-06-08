@@ -136,7 +136,7 @@ class BaseCommand extends Command
 	protected function askConfirmation ($question, $default = true, $trueAnswerRegex = '/^(y|j)/i') {
 		$helper = $this->getHelper('question');
 		$defaultTrue = $default? 'yes' : 'no';
-		$question = "<comment>$question</comment> [yes/no] ($defaultTrue) :";
+		$question = "<comment>$question</comment> [yes/no] ($defaultTrue): ";
 		return $helper->ask($this->input, $this->output, 	new ConfirmationQuestion ($question, $default, $trueAnswerRegex));
 	}
 
@@ -262,7 +262,6 @@ class BaseCommand extends Command
 
 		foreach ($files as $file) {
 			$config = json_decode($file->getContents(), true);
-
 			if ($config === null) {
 				throw new ExitException("Config file for {$projectName} could not be loaded. Not a valid json?");
 			}
@@ -283,6 +282,8 @@ class BaseCommand extends Command
 			throw new ExitException("Config file for {$this->projectName} could not be found!");
 		}
 		$fileName = $this->getLauncherConfigFileForProject($this->projectName);
+
+		$this->fileSystem->remove($files);
 		$this->fileSystem->dumpFile($fileName, $config);
 		$this->text("Project config file <comment>$fileName</comment> was saved!\n");
 	}
@@ -556,7 +557,47 @@ class BaseCommand extends Command
 			array_filter($services, function($service) { return json_decode($service) !== null; })
 		);
 
+		// Lets read the docker config for this service
+		foreach ($services as $key => $service) {
+			if ( !$this->serviceExists($service) ) {
+				$this->write("\nNo such service <comment>$serviceName</comment>\n\n");
+				continue;
+			}
+
+			$dockerConfig = $this->runNonTtyCommand(
+				"docker inspect --format='{{json .Config}}' {$this->projectName}-{$service['name']}"
+				, $this->project->directory());
+
+			$jsonDockerConfig = json_decode($dockerConfig);
+			$virtualHosts = [];
+			if (isset($jsonDockerConfig->Env)) {
+				foreach ($jsonDockerConfig->Env as $env) {
+					if (strpos($env, 'VIRTUAL_HOST=') !== false) {
+						$virtualHosts = str_replace("VIRTUAL_HOST=", "", $env);
+						if (strpos($virtualHosts, ',') !== false) {
+							$virtualHosts = explode(',', $virtualHosts);
+						} else {
+							$virtualHosts = [$virtualHosts];
+						}
+					}
+				}
+
+				foreach ($virtualHosts as $virtualHost) {
+					$services[$key]['hosts'][] = trim($virtualHost);
+				}
+			}
+		}
 		$this->project->update('services', $services);
 		$this->saveConfigForProject();
+	}
+
+
+	/**
+	 * @param $service
+	 * @return mixed
+	 */
+	protected function serviceExists($service)
+	{
+		return $this->fileSystem->exists($this->getServiceFolderForService($service));
 	}
 }

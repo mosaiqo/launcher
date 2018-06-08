@@ -49,6 +49,7 @@ class StartCommand extends BaseCommand
 			->addOption('service', 's',  InputOption::VALUE_IS_ARRAY | InputOption::VALUE_OPTIONAL, 'The services you like to boot')
 			->addOption('default', 'd', InputOption::VALUE_NONE, 'Use default values for config')
 			->addOption('force', 'f', InputOption::VALUE_NONE, 'Overrides the files')
+			->addOption('recreate', 'r', InputOption::VALUE_NONE, 'Recreates DataBase')
 			->addOption('pull', 'p', InputOption::VALUE_NONE, 'Forces pull of latest commit in current branch!');
 	}
 
@@ -64,9 +65,9 @@ class StartCommand extends BaseCommand
 			$this->updateServices();
 			$this->info("Starting Launcher project {$this->projectName}\n");
 			$this->createNetwork();
-//			$this->loginToRegistry();
 
 			$this->bootServices();
+			$this->updateServices();
 
 		} catch (ExitException $e) {
 		 $this->handleExitException($e);
@@ -139,10 +140,10 @@ class StartCommand extends BaseCommand
 			$config = $this->loadLauncherConfigFileForProject($service);
 			$this->write("Let's boot the scripts\n");
 
-			if ($config && (!$config['git-pull'] || $config['git-pull'] === false)) {
+			if ($config && (!isset($config['git-pull']) || $config['git-pull'] === false)) {
 				$this->pullLatest($service);
 			}
-			if ($config && $config['before']) {
+			if ($config && isset($config['before'])) {
 				$this->runBeforeConfigCommands($config, $service);
 			}
 
@@ -153,11 +154,11 @@ class StartCommand extends BaseCommand
 				$args .= " -f docker-compose.dev.yml";
 			}
 
-			if ($config && $config['after']) {
+			if ($config && isset($config['after'])) {
 				$this->runAfterConfigCommands($config, $service);
 			}
 
-			$args .= " -p {$this->projectName}";
+			$args .= " -p {$this->projectName}-{$service['name']}";
 
 			$this->runCommand(
 				"docker-compose ${args} up -d --build --remove-orphans || exit 1",
@@ -237,15 +238,17 @@ class StartCommand extends BaseCommand
 			$dbExists = $this->runNonTtyCommand("docker exec dev-env-mysql mysql -N -s -r -e \"SHOW DATABASES LIKE '{$databaseName}';\"");
 			if ($dbExists) {
 				$this->info("DDBB {$databaseName} already exists!");
-				$this->removeDB = !$this->input->getOption('force') ? $this->ask(new ConfirmationQuestion(
+				$force = $this->input->getOption('force');
+				$recreate = $force ? $force : $this->input->getOption('recreate');
+				$this->removeDB = !$force && $recreate ? $this->ask(new ConfirmationQuestion(
 					"Database already exists, do you want to recreate it again? [Y|N] (No): ",
 					false,
 					'/^(y|j)/i'
-				)) : true;
+				)) : $force && $recreate;
 
 				if ($this->removeDB) {
 					$this->info("Removing DDBB {$databaseName}!");
-					$this->runCommand("docker exec -it dev-env-mysql mysql -e \"DROP DATABASE {$databaseName};\"");
+					$this->runCommand("docker exec -it dev-env-mysql mysql -e \"DROP DATABASE \`{$databaseName}\`;\"");
 					$dbExists = $this->runNonTtyCommand("docker exec dev-env-mysql mysql -N -s -r -e \"SHOW DATABASES LIKE '{$databaseName}';\"");
 				}
 			}
@@ -256,9 +259,9 @@ class StartCommand extends BaseCommand
 				$this->info("Creating DDBB {$databaseName}!\n");
 				$databaseUser = getenv('DB_USERNAME');
 				$databasePassword = getenv('DB_PASSWORD');
-				$this->runCommand("docker exec -it dev-env-mysql mysql -e \"CREATE DATABASE IF NOT EXISTS {$databaseName};\"");
+				$this->runCommand("docker exec -it dev-env-mysql mysql -e \"CREATE DATABASE IF NOT EXISTS \`{$databaseName}\`;\"");
 				$this->runCommand("docker exec -it dev-env-mysql mysql -e \"CREATE USER IF NOT EXISTS {$databaseUser}@'%' IDENTIFIED BY '{$databasePassword}';\"");
-				$this->runCommand("docker exec -it dev-env-mysql mysql -e \"GRANT ALL PRIVILEGES ON {$databaseName}.* TO {$databaseUser}@'%';\"");
+				$this->runCommand("docker exec -it dev-env-mysql mysql -e \"GRANT ALL PRIVILEGES ON \`{$databaseName}\`.* TO {$databaseUser}@'%';\"");
 				$this->runCommand("		docker exec -it dev-env-mysql mysql -e \"FLUSH PRIVILEGES;\"");
 			}
 		}
@@ -386,15 +389,6 @@ class StartCommand extends BaseCommand
 
 			$this->runCommand("git pull", $this->getServiceFolderForService($service));
 		}
-	}
-
-	/**
-	 * @param $service
-	 * @return mixed
-	 */
-	protected function serviceExists($service)
-	{
-		return $this->fileSystem->exists($this->getServiceFolderForService($service));
 	}
 
 	/**

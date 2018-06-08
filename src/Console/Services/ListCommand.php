@@ -1,6 +1,6 @@
 <?php
 
-namespace Mosaiqo\Launcher\Console\Projects;
+namespace Mosaiqo\Launcher\Console\Services;
 
 use Mosaiqo\Launcher\Console\BaseCommand;
 use Mosaiqo\Launcher\Exceptions\ExitException;
@@ -41,8 +41,9 @@ class ListCommand extends BaseCommand
 	protected function configure()
 	{
 		$this
-			->setName('project:list')
-			->setDescription('List all the projects');
+			->setName('service:list')
+			->addArgument('name', InputArgument::REQUIRED)
+			->setDescription('List all the services for a certain project');
 	}
 
 	/**
@@ -56,9 +57,9 @@ class ListCommand extends BaseCommand
 			if (!$this->isLauncherConfigured()) {
 				$this->info("Launcher is not configured!");
 			}
-
-			$this->loadProjectFiles();
-			$this->listProjects();
+			$this->loadConfigForProject($this->projectName);
+			$this->updateServices();
+			$this->listServices();
 
 		} catch (ExitException $e) {
 			$this->handleExitException($e);
@@ -68,30 +69,17 @@ class ListCommand extends BaseCommand
 	/**
 	 *
 	 */
-	public function loadProjectFiles()
-	{
-		$finder = new Finder();
-		$this->files = $finder->files()->in($this->launcherProjectsDirectory());
-	}
-
-	/**
-	 *
-	 */
-	public function listProjects()
+	public function listServices()
 	{
 		$table = new Table($this->output);
-		$table->setHeaders(['Name', 'Path', 'Services']);
-
+		$table->setHeaders(['Service', 'Path', 'Hosts']);
 		$rows = [];
-
-		foreach ($this->files as $file) {
-			$project = json_decode($file->getContents(), true);
-			$services = '';
-			foreach ($project['services'] as $service) {
-				$services .= $service['name'] . "\n";
-			}
-			$rows[] = [$project['name'], $project['directory'], $services];
-
+		$this->info("Project: {$this->project->name()} ({$this->project->directory()})");
+		foreach ($this->project->services() as $service) {
+			$rows[] = [
+				"{$this->projectName}-{$service['name']}",
+				"{$this->project->directory()}/{$service['path']}",
+				isset($service['hosts']) ? implode(',', $service['hosts']) : ''];
 		}
 		$table->setRows($rows);
 		$table->render();

@@ -34,7 +34,7 @@ class AddCommand extends BaseCommand
 	/**
 	 * @var array
 	 */
-	protected $serviceTypes = ['laravel-app', 'laravel-api', 'vue-frontend', 'vue-spa', 'vue-mobile', 'git'];
+	protected $serviceTypes = ['laravel-app', 'laravel-api', 'vue-frontend', 'vue-spa', 'vue-mobile', 'git', 'existent'];
 
 	/**
 	 * @var
@@ -158,6 +158,9 @@ class AddCommand extends BaseCommand
 				}
 				$cmd = "git clone {$this->repository} {$serviceName} || exit 1";
 				break;
+			case 'existent':
+				$cmd = null;
+				break;
 			case 'laravel-app':
 			case 'laravel-api':
 				$cmd = "laravel new {$serviceName} || exit 1";
@@ -170,8 +173,6 @@ class AddCommand extends BaseCommand
 			default;
 				return 0;
 		}
-
-		var_dump($this->getServicesFolderForProject(), $cmd);
 
 		if ($cmd) {
 			$this->runCommand($cmd, $this->getServicesFolderForProject());
