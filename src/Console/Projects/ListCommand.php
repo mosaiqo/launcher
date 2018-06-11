@@ -80,17 +80,28 @@ class ListCommand extends BaseCommand
 	public function listProjects()
 	{
 		$table = new Table($this->output);
-		$table->setHeaders(['Name', 'Path', 'Services']);
+		$table->setHeaders(['Name', 'Path', 'Services', 'Hosts']);
 
 		$rows = [];
 
 		foreach ($this->files as $file) {
 			$project = json_decode($file->getContents(), true);
 			$services = '';
+			$hosts = '';
+			$this->projectName = strtolower($project['name']);
+			$this->loadConfigForProject($this->projectName);
+			$this->updateServices();
 			foreach ($project['services'] as $service) {
 				$services .= $service['name'] . "\n";
+				$hosts .= isset($service['hosts']) ? implode(',', $service['hosts']) . "\n" : "\n";
 			}
-			$rows[] = [$project['name'], $project['directory'], $services];
+
+			$rows[] = [
+				$project['name'],
+				$project['directory'],
+				$services,
+				$hosts
+			];
 
 		}
 		$table->setRows($rows);

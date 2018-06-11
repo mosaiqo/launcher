@@ -83,7 +83,7 @@ class RemoveCommand extends BaseCommand
 		foreach ($this->files as $file) {
 			$project = json_decode($file->getContents(), true);
 			if ($project['name'] === $this->input->getArgument('name')) {
-				$file = $file->getRealPath();
+				$fileToRemove = $file->getRealPath();
 				$exists = true;
 				$path = $project['directory'];
 				$remove = $this->askConfirmation("Are you sure to remove <info>{$name}</info>");
@@ -96,10 +96,10 @@ class RemoveCommand extends BaseCommand
 		}
 
 
-		if ($path) {
+		if ($path && $remove) {
 			$this->text("Removing <info>{$name}</info>...\n");
 			$this->runNonTtyCommand("rm -Rf {$path}");
-			$this->runNonTtyCommand("rm {$file}");
+			$this->runNonTtyCommand("rm {$fileToRemove}");
 			$this->text("Removed <info>{$name}</info>!\n");
 		}
 

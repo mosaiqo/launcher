@@ -556,7 +556,7 @@ class BaseCommand extends Command
 			function ($service) { return json_decode($service, true);},
 			array_filter($services, function($service) { return json_decode($service) !== null; })
 		);
-
+		$projectName = strtolower($this->projectName);
 		// Lets read the docker config for this service
 		foreach ($services as $key => $service) {
 			if ( !$this->serviceExists($service) ) {
@@ -565,7 +565,7 @@ class BaseCommand extends Command
 			}
 
 			$dockerConfig = $this->runNonTtyCommand(
-				"docker inspect --format='{{json .Config}}' {$this->projectName}-{$service['name']}"
+				"docker inspect --format='{{json .Config}}' {$projectName}-{$service['name']}"
 				, $this->project->directory());
 
 			$jsonDockerConfig = json_decode($dockerConfig);
@@ -587,6 +587,7 @@ class BaseCommand extends Command
 				}
 			}
 		}
+
 		$this->project->update('services', $services);
 		$this->saveConfigForProject();
 	}
